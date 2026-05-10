@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    environment:
+      DJANGO_DEBUG: "1"
+      DJANGO_SECRET_KEY: "local-compose-secret"
+      DATABASE_URL: "postgres://elearning:elearning@db:5432/elearning"
+      IFRAME_SIGNING_SECRET: "change-this-iframe-secret"
+      RESEARCH_ADMIN_PASSWORD: "change-this-admin-password"
+      VISUALIZATION_MIN_RESPONSES: "5"
+      DJANGO_COOKIE_SAMESITE: "Lax"
+      DJANGO_COOKIE_SECURE: "0"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: elearning
+      POSTGRES_USER: elearning
+      POSTGRES_PASSWORD: elearning
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

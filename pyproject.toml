@@ -1,0 +1,13 @@
+[project]
+name = "elearning-iframe"
+version = "0.1.0"
+description = "Django MVP for iframe-based e-learning activities."
+requires-python = ">=3.12"
+dependencies = [
+  "Django>=5.2,<6.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "gunicorn>=23.0,<24.0",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Relationship results{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">{{ count }} cohort participants</p>
+    <h1>Relationship results</h1>
+  </div>
+  <a class="text-link" href="{% url 'relationship-activity' %}">Edit response</a>
+</header>
+
+<section class="panel">
+  <div class="word-cloud" aria-label="Relationship response word cloud">
+    {% for word in words %}
+      <span style="font-size: {{ word.font_size }}rem">{{ word.label }} <small>{{ word.count }}</small></span>
+    {% empty %}
+      <p class="muted">No responses yet.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<nav class="footer-nav">
+  <a class="button button-secondary" href="{% url 'activity-landing' %}">Back to activities</a>
+</nav>
+{% endblock %}

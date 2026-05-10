@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Researcher login{% endblock %}
+
+{% block content %}
+<section class="panel panel-compact">
+  <p class="eyebrow">Researcher access</p>
+  <h1>Admin login</h1>
+  <form method="post" class="form-stack">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>
+      <span>Password</span>
+      {{ form.password }}
+    </label>
+    <button class="button" type="submit">Log in</button>
+  </form>
+</section>
+{% endblock %}

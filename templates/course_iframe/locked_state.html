@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<section class="panel panel-compact">
+  <p class="eyebrow">{{ title }}</p>
+  <h1>Results unlock at {{ threshold }} participants.</h1>
+  <p class="muted">{{ count }} participants are available so far.</p>
+  <div class="progress" aria-label="{{ count }} of {{ threshold }} participants">
+    <span style="width: {% widthratio count threshold 100 %}%"></span>
+  </div>
+  <a class="button" href="{{ continue_url }}">Continue</a>
+</section>
+{% endblock %}

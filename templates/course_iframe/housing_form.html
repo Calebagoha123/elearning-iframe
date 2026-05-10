@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Housing data entry{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">Activity 2</p>
+    <h1>Housing data entry</h1>
+  </div>
+  <a class="text-link" href="{% url 'activity-landing' %}">Activities</a>
+</header>
+
+<section class="split-layout">
+  <form method="post" class="panel form-stack">
+    {% csrf_token %}
+    <fieldset>
+      <legend>{{ question.question_text }}</legend>
+      {% for field in form %}
+        <label>
+          <span>{{ field.label }}</span>
+          {{ field }}
+        </label>
+        {% if field.errors %}<p class="error">{{ field.errors|striptags }}</p>{% endif %}
+      {% endfor %}
+    </fieldset>
+    <div class="form-actions">
+      <button class="button" type="submit">Add property</button>
+      <a class="button button-secondary" href="{% url 'housing-results' %}">View comparison</a>
+    </div>
+  </form>
+
+  <aside class="panel">
+    <div class="panel-heading">
+      <h2>Your entries</h2>
+      <span class="status">{{ entries|length }}</span>
+    </div>
+    <div class="entry-list">
+      {% for entry in entries %}
+        <div class="entry-row">
+          <strong>{{ entry.payload.district }}</strong>
+          <span>&pound;{{ entry.payload.monthly_rent }} &middot; {{ entry.payload.rooms }} rooms</span>
+        </div>
+      {% empty %}
+        <p class="muted">No housing entries saved yet.</p>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+{% endblock %}

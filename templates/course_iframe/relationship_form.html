@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Relationship survey{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">Activity 1</p>
+    <h1>Relationship survey</h1>
+  </div>
+  <a class="text-link" href="{% url 'activity-landing' %}">Activities</a>
+</header>
+
+<section class="panel">
+  <form method="post" class="form-stack" data-relationship-form>
+    {% csrf_token %}
+    {{ formset.management_form }}
+    <fieldset class="relationship-fieldset">
+      <legend>{{ question.question_text }}</legend>
+      {% if formset.non_form_errors %}
+        <p class="error">{{ formset.non_form_errors|striptags }}</p>
+      {% endif %}
+      <div class="relationship-rows" data-relationship-rows>
+        {% for row in formset %}
+          <div class="relationship-row" data-relationship-row>
+            <label>
+              <span>{{ row.relationship.label }}</span>
+              {{ row.relationship }}
+            </label>
+            <label class="relationship-other is-hidden">
+              <span>{{ row.other_relationship.label }}</span>
+              {{ row.other_relationship }}
+            </label>
+            <button class="icon-button" type="button" data-remove-relationship aria-label="Remove relationship">&times;</button>
+            {% if row.relationship.errors %}<p class="error">{{ row.relationship.errors|striptags }}</p>{% endif %}
+            {% if row.other_relationship.errors %}<p class="error">{{ row.other_relationship.errors|striptags }}</p>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div class="form-actions">
+      <button class="button button-secondary" type="button" data-add-relationship aria-label="Add relationship">+ Add relationship</button>
+      <button class="button" type="submit" data-save-relationships disabled>Save responses</button>
+      <a class="button button-secondary" href="{% url 'relationship-results' %}">View results</a>
+    </div>
+  </form>
+</section>
+
+<template id="relationship-row-template">
+  <div class="relationship-row" data-relationship-row>
+    <label>
+      <span>{{ formset.empty_form.relationship.label }}</span>
+      {{ formset.empty_form.relationship }}
+    </label>
+    <label class="relationship-other is-hidden">
+      <span>{{ formset.empty_form.other_relationship.label }}</span>
+      {{ formset.empty_form.other_relationship }}
+    </label>
+    <button class="icon-button" type="button" data-remove-relationship aria-label="Remove relationship">&times;</button>
+  </div>
+</template>
+
+<script>
+  (() => {
+    const form = document.querySelector("[data-relationship-form]");
+    if (!form) return;
+
+    const rows = form.querySelector("[data-relationship-rows]");
+    const totalForms = form.querySelector('input[name="relationships-TOTAL_FORMS"]');
+    const template = document.querySelector("#relationship-row-template");
+    const saveButton = form.querySelector("[data-save-relationships]");
+
+    function rowHasRelationship(row) {
+      const select = row.querySelector("[data-relationship-select]");
+      const other = row.querySelector('input[name$="-other_relationship"]');
+      return Boolean(select && select.value) && (select.value !== "other" || Boolean(other && other.value.trim()));
+    }
+
+    function updateOtherVisibility(row) {
+      const select = row.querySelector("[data-relationship-select]");
+      const otherWrap = row.querySelector(".relationship-other");
+      if (!select || !otherWrap) return;
+      otherWrap.classList.toggle("is-hidden", select.value !== "other");
+    }
+
+    function updateSaveState() {
+      const hasRelationship = Array.from(rows.querySelectorAll("[data-relationship-row]")).some(rowHasRelationship);
+      saveButton.disabled = !hasRelationship;
+    }
+
+    function reindexRows() {
+      rows.querySelectorAll("[data-relationship-row]").forEach((row, index) => {
+        row.querySelectorAll("input, select, label").forEach((element) => {
+          ["name", "id", "for"].forEach((attr) => {
+            const value = element.getAttribute(attr);
+            if (value) {
+              element.setAttribute(attr, value.replace(/relationships-\d+-/g, `relationships-${index}-`));
+              element.setAttribute(attr, element.getAttribute(attr).replace(/id_relationships-\d+-/g, `id_relationships-${index}-`));
+            }
+          });
+        });
+      });
+      totalForms.value = rows.querySelectorAll("[data-relationship-row]").length;
+    }
+
+    function bindRow(row) {
+      updateOtherVisibility(row);
+      row.addEventListener("change", () => {
+        updateOtherVisibility(row);
+        updateSaveState();
+      });
+      row.addEventListener("input", updateSaveState);
+      row.querySelector("[data-remove-relationship]").addEventListener("click", () => {
+        if (rows.querySelectorAll("[data-relationship-row]").length === 1) {
+          row.querySelectorAll("input").forEach(input => input.value = "");
+          const select = row.querySelector("[data-relationship-select]");
+          if (select) select.value = "";
+        } else {
+          row.remove();
+          reindexRows();
+        }
+        rows.querySelectorAll("[data-relationship-row]").forEach(updateOtherVisibility);
+        updateSaveState();
+      });
+    }
+
+    rows.querySelectorAll("[data-relationship-row]").forEach(bindRow);
+    updateSaveState();
+
+    form.querySelector("[data-add-relationship]").addEventListener("click", () => {
+      const index = Number(totalForms.value);
+      const html = template.innerHTML.replace(/__prefix__/g, index);
+      rows.insertAdjacentHTML("beforeend", html);
+      totalForms.value = String(index + 1);
+      bindRow(rows.lastElementChild);
+      updateSaveState();
+    });
+  })();
+</script>
+{% endblock %}

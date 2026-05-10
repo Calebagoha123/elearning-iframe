@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Course activities{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">Course {{ participant.course.course_id }}</p>
+    <h1>Course activities</h1>
+  </div>
+  <span class="identity">ID {{ participant.participant_id }}</span>
+</header>
+
+<section class="activity-list">
+  <article class="activity-row">
+    <div>
+      <p class="eyebrow">Activity 1</p>
+      <h2>Relationship survey</h2>
+      <p class="muted">Answer one question, then view the cohort response pattern when enough submissions are available.</p>
+    </div>
+    <div class="row-actions">
+      <span class="status">{% if relationship_done %}Saved{% else %}Not started{% endif %}</span>
+      <a class="button" href="{% url 'relationship-activity' %}">Open</a>
+    </div>
+  </article>
+
+  <article class="activity-row">
+    <div>
+      <p class="eyebrow">Activity 2</p>
+      <h2>Housing data entry</h2>
+      <p class="muted">Log researched rental properties and compare your entries with the course average.</p>
+    </div>
+    <div class="row-actions">
+      <span class="status">{{ housing_count }} saved</span>
+      <a class="button" href="{% url 'housing-activity' %}">Open</a>
+    </div>
+  </article>
+</section>
+{% endblock %}
