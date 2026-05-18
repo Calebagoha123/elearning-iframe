@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path("", views.iframe_entry, name="iframe-entry"),
     path("iframe/", views.iframe_entry, name="iframe-entry"),
+    path("iframe/<slug:activity_slug>/", views.activity_iframe_entry, name="activity-iframe-entry"),
     path("activities/", views.activity_landing, name="activity-landing"),
     path("activities/relationship/", views.relationship_activity, name="relationship-activity"),
     path("activities/relationship/results/", views.relationship_results, name="relationship-results"),
@@ -13,5 +14,9 @@ urlpatterns = [
     path("research/login/", views.research_login, name="research-login"),
     path("research/logout/", views.research_logout, name="research-logout"),
     path("research/dashboard/", views.research_dashboard, name="research-dashboard"),
+    path("research/activities/relationship/edit/", views.edit_relationship, name="research-edit-relationship"),
+    path("research/activities/relationship/plots/", views.research_relationship_plots, name="research-relationship-plots"),
+    path("research/activities/housing/edit/", views.edit_housing, name="research-edit-housing"),
+    path("research/activities/housing/plots/", views.research_housing_plots, name="research-housing-plots"),
     path("research/export.csv", views.research_export_csv, name="research-export-csv"),
 ]

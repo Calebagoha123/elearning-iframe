@@ -29,10 +29,10 @@ class Participant(models.Model):
                 name="unique_participant_per_course",
             )
         ]
-        ordering = ["course__course_id", "participant_id"]
+        ordering = ["participant_id"]
 
     def __str__(self):
-        return f"{self.course.course_id}:{self.participant_id}"
+        return self.participant_id
 
 
 class Activity(models.Model):

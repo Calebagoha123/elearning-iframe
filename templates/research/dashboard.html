@@ -11,20 +11,36 @@
   <a class="text-link" href="{% url 'research-logout' %}">Log out</a>
 </header>
 
-<section class="metric-grid">
-  <div class="metric">
-    <span>Participants</span>
-    <strong>{{ participant_count }}</strong>
-  </div>
-  <div class="metric">
-    <span>Responses</span>
-    <strong>{{ response_count }}</strong>
-  </div>
-  {% for activity in activity_counts %}
-    <div class="metric">
-      <span>{{ activity.activity__title }}</span>
-      <strong>{{ activity.count }}</strong>
+<section class="activity-card-grid activity-card-grid--summary">
+  <article class="activity-card">
+    <header class="activity-card__head">
+      <h2>Participants</h2>
+    </header>
+    <div class="activity-card__count">
+      <span>Total</span>
+      <strong>{{ participant_count }}</strong>
     </div>
+  </article>
+  {% for card in activity_cards %}
+    <article class="activity-card">
+      <header class="activity-card__head">
+        <h2>{{ card.title }}</h2>
+        {% if card.edit_url_name %}
+          <a class="button button-secondary button-small" href="{% url card.edit_url_name %}">Edit</a>
+        {% endif %}
+      </header>
+      <div class="activity-card__count">
+        <span>Responses</span>
+        <strong>{{ card.count }}</strong>
+      </div>
+      {% if card.plot_url_name %}
+        <footer class="activity-card__actions">
+          <a class="text-link" href="{% url card.plot_url_name %}">View plots</a>
+        </footer>
+      {% endif %}
+    </article>
+  {% empty %}
+    <p class="muted">No activities recorded yet.</p>
   {% endfor %}
 </section>
 

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Start {{ activity_title }}{% endblock %}
+
+{% block content %}
+<section class="panel panel-compact entry-panel">
+  <p class="eyebrow">Activity</p>
+  <h1>{{ activity_title }}</h1>
+  <form method="post" class="form-stack participant-entry-form">
+    {% csrf_token %}
+    <label>
+      <span>{{ form.pseudoname.label }}</span>
+      {{ form.pseudoname }}
+      <small>{{ form.pseudoname.help_text }}</small>
+    </label>
+    {% if form.pseudoname.errors %}<p class="error">{{ form.pseudoname.errors|striptags }}</p>{% endif %}
+    <p class="disclaimer">
+      Your responses will be collected and aggregated with data from other activities for research purposes.
+      Although stored under a pseudonym, combining responses across activities may make it possible to re-identify
+      individual participants from the pseudonymized data.
+    </p>
+    <button class="button" type="submit">Start activity</button>
+  </form>
+</section>
+{% endblock %}

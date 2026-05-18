@@ -8,7 +8,7 @@
     <p class="eyebrow">Activity 1</p>
     <h1>Relationship survey</h1>
   </div>
-  <a class="text-link" href="{% url 'activity-landing' %}">Activities</a>
+  <p class="identity">ID {{ participant.participant_id }}</p>
 </header>
 
 <section class="panel">
@@ -27,12 +27,24 @@
               <span>{{ row.relationship.label }}</span>
               {{ row.relationship }}
             </label>
+            <fieldset class="likert-field">
+              <legend>{{ row.income_comparison.label }}</legend>
+              <div class="likert-scale" style="--likert-count: {{ likert_points }}">
+                {% for option in row.income_comparison %}
+                  <label class="likert-option">
+                    {{ option.tag }}
+                    <span>{{ option.choice_label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </fieldset>
             <label class="relationship-other is-hidden">
               <span>{{ row.other_relationship.label }}</span>
               {{ row.other_relationship }}
             </label>
             <button class="icon-button" type="button" data-remove-relationship aria-label="Remove relationship">&times;</button>
             {% if row.relationship.errors %}<p class="error">{{ row.relationship.errors|striptags }}</p>{% endif %}
+            {% if row.income_comparison.errors %}<p class="error">{{ row.income_comparison.errors|striptags }}</p>{% endif %}
             {% if row.other_relationship.errors %}<p class="error">{{ row.other_relationship.errors|striptags }}</p>{% endif %}
           </div>
         {% endfor %}
@@ -41,7 +53,6 @@
     <div class="form-actions">
       <button class="button button-secondary" type="button" data-add-relationship aria-label="Add relationship">+ Add relationship</button>
       <button class="button" type="submit" data-save-relationships disabled>Save responses</button>
-      <a class="button button-secondary" href="{% url 'relationship-results' %}">View results</a>
     </div>
   </form>
 </section>
@@ -52,6 +63,17 @@
       <span>{{ formset.empty_form.relationship.label }}</span>
       {{ formset.empty_form.relationship }}
     </label>
+    <fieldset class="likert-field">
+      <legend>{{ formset.empty_form.income_comparison.label }}</legend>
+      <div class="likert-scale" style="--likert-count: {{ likert_points }}">
+        {% for option in formset.empty_form.income_comparison %}
+          <label class="likert-option">
+            {{ option.tag }}
+            <span>{{ option.choice_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
     <label class="relationship-other is-hidden">
       <span>{{ formset.empty_form.other_relationship.label }}</span>
       {{ formset.empty_form.other_relationship }}
@@ -72,8 +94,9 @@
 
     function rowHasRelationship(row) {
       const select = row.querySelector("[data-relationship-select]");
+      const income = row.querySelector('input[type="radio"][name$="-income_comparison"]:checked');
       const other = row.querySelector('input[name$="-other_relationship"]');
-      return Boolean(select && select.value) && (select.value !== "other" || Boolean(other && other.value.trim()));
+      return Boolean(select && select.value && income && income.value) && (select.value !== "other" || Boolean(other && other.value.trim()));
     }
 
     function updateOtherVisibility(row) {
@@ -112,9 +135,14 @@
       row.addEventListener("input", updateSaveState);
       row.querySelector("[data-remove-relationship]").addEventListener("click", () => {
         if (rows.querySelectorAll("[data-relationship-row]").length === 1) {
-          row.querySelectorAll("input").forEach(input => input.value = "");
-          const select = row.querySelector("[data-relationship-select]");
-          if (select) select.value = "";
+          row.querySelectorAll("input").forEach(input => {
+            if (input.type === "radio" || input.type === "checkbox") {
+              input.checked = false;
+            } else {
+              input.value = "";
+            }
+          });
+          row.querySelectorAll("select").forEach(select => select.value = "");
         } else {
           row.remove();
           reindexRows();

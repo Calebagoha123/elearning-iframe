@@ -1,18 +1,12 @@
 from django.contrib import admin
 
-from .models import Activity, ConsentRecord, Course, ExportLog, Participant, Question, Response
-
-
-@admin.register(Course)
-class CourseAdmin(admin.ModelAdmin):
-    list_display = ["course_id", "course_name", "created_date"]
-    search_fields = ["course_id", "course_name"]
+from .models import Activity, ConsentRecord, ExportLog, Participant, Question, Response
 
 
 @admin.register(Participant)
 class ParticipantAdmin(admin.ModelAdmin):
-    list_display = ["participant_id", "course", "has_research_consent", "last_used"]
-    list_filter = ["course", "has_research_consent"]
+    list_display = ["participant_id", "has_research_consent", "last_used"]
+    list_filter = ["has_research_consent"]
     search_fields = ["participant_id", "optional_username"]
 
 
@@ -32,7 +26,7 @@ class QuestionAdmin(admin.ModelAdmin):
 class ResponseAdmin(admin.ModelAdmin):
     list_display = ["participant", "activity", "question", "question_version", "created_at"]
     list_filter = ["activity", "question_version", "created_at"]
-    search_fields = ["participant__participant_id", "participant__course__course_id"]
+    search_fields = ["participant__participant_id"]
 
 
 @admin.register(ConsentRecord)

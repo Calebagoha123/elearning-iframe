@@ -33,7 +33,7 @@ def seed_mvp(apps, schema_editor):
         defaults={
             "question_text": "Think of someone whose income you know roughly. What is your relationship to them?",
             "field_type": "choice",
-            "options_json": {"choices": RELATIONSHIP_CHOICES},
+            "options_json": {"choices": RELATIONSHIP_CHOICES, "likert_points": 5},
             "is_active": True,
         },
     )

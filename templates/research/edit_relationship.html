@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Edit relationship survey{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">Researcher · Activity</p>
+    <h1>Relationship survey</h1>
+  </div>
+  <a class="text-link" href="{% url 'research-dashboard' %}">&larr; Dashboard</a>
+</header>
+
+<section class="panel">
+  <form
+    method="post"
+    class="form-stack"
+    data-relationship-edit
+    data-confirm-versioning="Saving creates a new active version of this question. Existing responses stay tied to the previous version and will no longer be included in the current cohort plots. Continue?"
+  >
+    {% csrf_token %}
+
+    <fieldset>
+      <legend>Question wording</legend>
+      <label>
+        <span>{{ form.question_text.label }}</span>
+        {{ form.question_text }}
+        {% if form.question_text.errors %}<p class="error">{{ form.question_text.errors|striptags }}</p>{% endif %}
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Relationship options</legend>
+      <label>
+        <span>{{ form.relationship_choices.label }}</span>
+        {{ form.relationship_choices }}
+        {% if form.relationship_choices.help_text %}<small>{{ form.relationship_choices.help_text }}</small>{% endif %}
+        {% if form.relationship_choices.errors %}<p class="error">{{ form.relationship_choices.errors|striptags }}</p>{% endif %}
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Income comparison scale</legend>
+      <label>
+        <span>{{ form.likert_points.label }}</span>
+        {{ form.likert_points }}
+        {% if form.likert_points.errors %}<p class="error">{{ form.likert_points.errors|striptags }}</p>{% endif %}
+      </label>
+
+      {% for group in form.label_field_groups %}
+        <div
+          class="likert-label-group"
+          data-likert-group="{{ group.points }}"
+          {% if group.points != selected_points %}hidden{% endif %}
+        >
+          <h3 class="likert-label-group__title">{{ group.points }}-point labels</h3>
+          <div class="likert-label-grid">
+            {% for entry in group.fields %}
+              <label>
+                <span>{{ forloop.counter }}</span>
+                {{ entry.field }}
+                {% if entry.field.errors %}<p class="error">{{ entry.field.errors|striptags }}</p>{% endif %}
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </fieldset>
+
+    <div class="form-actions">
+      <button class="button" type="submit" data-save-changes disabled>Save changes</button>
+    </div>
+  </form>
+</section>
+
+<script>
+  (() => {
+    const form = document.querySelector("[data-relationship-edit]");
+    if (!form) return;
+    const select = form.querySelector("[name='likert_points']");
+    const groups = form.querySelectorAll("[data-likert-group]");
+    const confirmMessage = form.dataset.confirmVersioning;
+    const saveButton = form.querySelector("[data-save-changes]");
+    const serialize = () => Array
+      .from(new FormData(form).entries())
+      .filter(([key]) => key !== "csrfmiddlewaretoken")
+      .map(([key, value]) => `${key}=${value}`)
+      .join("&");
+    const initialState = serialize();
+    const updateSaveState = () => {
+      if (saveButton) saveButton.disabled = serialize() === initialState;
+    };
+
+    if (select && groups.length) {
+      const sync = () => {
+        const value = String(select.value);
+        groups.forEach(group => {
+          group.hidden = group.dataset.likertGroup !== value;
+        });
+      };
+      select.addEventListener("change", sync);
+      sync();
+    }
+
+    form.addEventListener("input", updateSaveState);
+    form.addEventListener("change", updateSaveState);
+    updateSaveState();
+
+    if (confirmMessage) {
+      form.addEventListener("submit", event => {
+        if (saveButton && saveButton.disabled) {
+          event.preventDefault();
+          return;
+        }
+        if (!window.confirm(confirmMessage)) {
+          event.preventDefault();
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

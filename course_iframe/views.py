@@ -1,17 +1,25 @@
 import csv
-import json
+import math
 from functools import wraps
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Count
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
-from .forms import ExportFilterForm, HousingEntryForm, RelationshipFormSet, ResearchLoginForm
+from .forms import (
+    ExportFilterForm,
+    HousingEditForm,
+    HousingEntryForm,
+    ParticipantEntryForm,
+    RelationshipEditForm,
+    RelationshipFormSet,
+    ResearchLoginForm,
+)
 from .models import ExportLog, Participant, Response
 from .services import (
     HOUSING_QUESTION_SLUG,
@@ -20,16 +28,74 @@ from .services import (
     RELATIONSHIP_SLUG,
     active_question,
     get_or_create_participant,
-    housing_comparison_rows,
+    housing_axis_label,
+    housing_scatter_config,
+    housing_scatter_points,
     mvp_activities,
-    participant_count_for_course_activity,
+    palette_color_for_relationship,
+    participant_count_for_question,
+    relationship_color_map,
     participant_from_session,
     relationship_counts,
+    relationship_likert_choices,
+    relationship_likert_points,
+    relationship_segmented_bars,
     remember_participant,
     save_housing_response,
     save_relationship_responses,
+    update_housing_settings,
+    update_relationship_settings,
     valid_iframe_signature,
 )
+
+
+ACTIVITY_ENTRY_TARGETS = {
+    RELATIONSHIP_SLUG: {
+        "title": "Relationship survey",
+        "redirect": "relationship-activity",
+    },
+    HOUSING_SLUG: {
+        "title": "Housing data entry",
+        "redirect": "housing-activity",
+    },
+}
+
+BASE_CSV_COLUMNS = [
+    "participant_id",
+    "activity_slug",
+    "question_text",
+    "question_version",
+    "created_at",
+]
+
+ACTIVITY_PAYLOAD_COLUMNS = {
+    RELATIONSHIP_SLUG: [
+        "relationship_value",
+        "relationship_label",
+        "income_comparison_value",
+        "income_comparison_label",
+        "income_likert_points",
+    ],
+    HOUSING_SLUG: [
+        "district",
+        "monthly_rent",
+        "rooms",
+        "size_sqm",
+    ],
+}
+
+
+def frequency_axis(max_value):
+    if max_value <= 0:
+        return {"max": 1, "ticks": [1, 0]}
+    if max_value <= 4:
+        return {"max": max_value, "ticks": list(range(max_value, -1, -1))}
+    step = math.ceil(max_value / 4)
+    axis_max = step * 4
+    return {
+        "max": axis_max,
+        "ticks": [axis_max - step * index for index in range(5)],
+    }
 
 
 def student_required(view_func):
@@ -70,9 +136,42 @@ def iframe_entry(request):
             status=403,
         )
 
-    participant = get_or_create_participant(course_id, participant_id)
+    participant = get_or_create_participant(participant_id)
     remember_participant(request, participant)
     return redirect("activity-landing")
+
+
+@require_http_methods(["GET", "POST"])
+def activity_iframe_entry(request, activity_slug):
+    activity_config = ACTIVITY_ENTRY_TARGETS.get(activity_slug)
+    if activity_config is None:
+        raise Http404("Activity not found")
+
+    data_source = request.POST if request.method == "POST" else request.GET
+    initial = {
+        "pseudoname": (
+            data_source.get("pseudoname")
+            or data_source.get("participant_id")
+            or ""
+        ).strip(),
+    }
+    if request.method == "POST":
+        form = ParticipantEntryForm(request.POST)
+        if form.is_valid():
+            participant = get_or_create_participant(form.cleaned_data["pseudoname"])
+            remember_participant(request, participant)
+            return redirect(activity_config["redirect"])
+    else:
+        form = ParticipantEntryForm(initial=initial)
+
+    return render(
+        request,
+        "course_iframe/participant_entry.html",
+        {
+            "activity_title": activity_config["title"],
+            "form": form,
+        },
+    )
 
 
 @student_required
@@ -102,11 +201,12 @@ def activity_landing(request, participant):
 def relationship_activity(request, participant):
     question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
     choices = question.options_json.get("choices", [])
+    income_choices = relationship_likert_choices(question)
     if request.method == "POST":
         formset = RelationshipFormSet(
             request.POST,
             prefix="relationships",
-            form_kwargs={"choices": choices},
+            form_kwargs={"choices": choices, "income_choices": income_choices},
         )
         if formset.is_valid():
             save_relationship_responses(
@@ -124,48 +224,51 @@ def relationship_activity(request, participant):
             initial.append(
                 {
                     "relationship": value,
+                    "income_comparison": response.payload.get("income_comparison_value", ""),
                     "other_relationship": response.payload.get("relationship_label", "") if value == "other" else "",
                 }
             )
         formset = RelationshipFormSet(
             initial=initial,
             prefix="relationships",
-            form_kwargs={"choices": choices},
+            form_kwargs={"choices": choices, "income_choices": income_choices},
         )
 
     return render(
         request,
         "course_iframe/relationship_form.html",
-        {"formset": formset, "participant": participant, "question": question},
+        {
+            "formset": formset,
+            "participant": participant,
+            "question": question,
+            "likert_points": relationship_likert_points(question),
+        },
     )
 
 
 @student_required
 def relationship_results(request, participant):
-    count = participant_count_for_course_activity(participant.course, RELATIONSHIP_SLUG)
-    threshold = settings.VISUALIZATION_MIN_RESPONSES
-    if count < threshold:
-        return render(
-            request,
-            "course_iframe/locked_state.html",
-            {
-                "title": "Relationship results",
-                "count": count,
-                "threshold": threshold,
-                "continue_url": reverse("activity-landing"),
-            },
-        )
-
-    counts = relationship_counts(participant.course)
-    max_count = max((item[1] for item in counts), default=1)
+    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    count = participant_count_for_question(question)
+    counts = relationship_counts(question)
+    colors_by_value = relationship_color_map(question)
+    max_count = max((item["count"] for item in counts), default=1)
     words = [
         {
-            "label": label,
-            "count": item_count,
-            "font_size": round(1.0 + (item_count / max_count) * 2.4, 2),
+            "label": item["label"],
+            "count": item["count"],
+            "font_size": round(1.0 + (item["count"] / max_count) * 2.4, 2),
+            "color": palette_color_for_relationship(
+                item["label"],
+                item["is_other"],
+                item["value"],
+                colors_by_value,
+            ),
         }
-        for label, item_count in counts
+        for item in counts
     ]
+    segmented = relationship_segmented_bars(question)
+    axis = frequency_axis(segmented["column_max"])
     return render(
         request,
         "course_iframe/relationship_results.html",
@@ -173,6 +276,11 @@ def relationship_results(request, participant):
             "participant": participant,
             "count": count,
             "words": words,
+            "segmented_columns": segmented["columns"],
+            "segmented_max": segmented["column_max"],
+            "segmented_axis_max": axis["max"],
+            "segmented_y_ticks": axis["ticks"],
+            "segmented_legend": segmented["legend"],
         },
     )
 
@@ -185,7 +293,7 @@ def housing_activity(request, participant):
         form = HousingEntryForm(request.POST)
         if form.is_valid():
             save_housing_response(participant, question, form.cleaned_data)
-            messages.success(request, "Housing entry saved.")
+            messages.success(request, "Housing entry saved. Add another entry or view results when finished.")
             return redirect("housing-activity")
     else:
         form = HousingEntryForm()
@@ -208,27 +316,27 @@ def housing_activity(request, participant):
 
 @student_required
 def housing_results(request, participant):
-    count = participant_count_for_course_activity(participant.course, HOUSING_SLUG)
-    threshold = settings.VISUALIZATION_MIN_RESPONSES
-    if count < threshold:
-        return render(
-            request,
-            "course_iframe/locked_state.html",
-            {
-                "title": "Housing comparison",
-                "count": count,
-                "threshold": threshold,
-                "continue_url": reverse("housing-activity"),
-            },
-        )
-
+    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+    config = housing_scatter_config(question)
+    count = participant_count_for_question(question)
+    points = housing_scatter_points(
+        question,
+        participant,
+        config["x_axis"],
+        config["y_axis"],
+    )
     return render(
         request,
         "course_iframe/housing_results.html",
         {
             "participant": participant,
             "count": count,
-            "rows": housing_comparison_rows(participant.course, participant),
+            "points": points,
+            "has_your_points": any(point["is_yours"] for point in points),
+            "x_axis_label": housing_axis_label(config["x_axis"]),
+            "y_axis_label": housing_axis_label(config["y_axis"]),
+            "x_axis_key": config["x_axis"],
+            "y_axis_key": config["y_axis"],
         },
     )
 
@@ -238,7 +346,10 @@ def research_login(request):
     next_url = request.GET.get("next") or reverse("research-dashboard")
     if request.method == "POST":
         form = ResearchLoginForm(request.POST)
-        if form.is_valid() and form.cleaned_data["password"] == settings.RESEARCH_ADMIN_PASSWORD:
+        if form.is_valid() and constant_time_compare(
+            form.cleaned_data["password"],
+            settings.RESEARCH_ADMIN_PASSWORD,
+        ):
             request.session["researcher_admin"] = True
             redirect_to = request.POST.get("next") or reverse("research-dashboard")
             if not url_has_allowed_host_and_scheme(redirect_to, allowed_hosts={request.get_host()}):
@@ -262,20 +373,161 @@ def research_logout(request):
 
 @researcher_required
 def research_dashboard(request):
-    activity_counts = (
-        Response.objects.values("activity__slug", "activity__title")
-        .annotate(count=Count("id"))
-        .order_by("activity__slug")
-    )
+    active_questions = {
+        RELATIONSHIP_SLUG: active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG),
+        HOUSING_SLUG: active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG),
+    }
+    edit_routes = {
+        RELATIONSHIP_SLUG: "research-edit-relationship",
+        HOUSING_SLUG: "research-edit-housing",
+    }
+    plot_routes = {
+        RELATIONSHIP_SLUG: "research-relationship-plots",
+        HOUSING_SLUG: "research-housing-plots",
+    }
+    activity_cards = []
+    for activity in mvp_activities():
+        slug = activity.slug
+        activity_cards.append(
+            {
+                "slug": slug,
+                "title": activity.title,
+                "count": Response.objects.filter(question=active_questions[slug]).count(),
+                "edit_url_name": edit_routes.get(slug),
+                "plot_url_name": plot_routes.get(slug),
+            }
+        )
+
     return render(
         request,
         "research/dashboard.html",
         {
             "participant_count": Participant.objects.count(),
-            "response_count": Response.objects.count(),
-            "activity_counts": activity_counts,
+            "activity_cards": activity_cards,
             "export_form": ExportFilterForm(),
             "recent_exports": ExportLog.objects.all()[:8],
+        },
+    )
+
+
+@researcher_required
+def research_relationship_plots(request):
+    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    count = participant_count_for_question(question)
+    counts = relationship_counts(question)
+    colors_by_value = relationship_color_map(question)
+    max_count = max((item["count"] for item in counts), default=1)
+    words = [
+        {
+            "label": item["label"],
+            "count": item["count"],
+            "font_size": round(1.0 + (item["count"] / max_count) * 2.4, 2),
+            "color": palette_color_for_relationship(
+                item["label"],
+                item["is_other"],
+                item["value"],
+                colors_by_value,
+            ),
+        }
+        for item in counts
+    ]
+    segmented = relationship_segmented_bars(question)
+    axis = frequency_axis(segmented["column_max"])
+    return render(
+        request,
+        "course_iframe/relationship_results.html",
+        {
+            "count": count,
+            "words": words,
+            "segmented_columns": segmented["columns"],
+            "segmented_max": segmented["column_max"],
+            "segmented_axis_max": axis["max"],
+            "segmented_y_ticks": axis["ticks"],
+            "segmented_legend": segmented["legend"],
+            "is_research_view": True,
+        },
+    )
+
+
+@researcher_required
+def research_housing_plots(request):
+    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+    config = housing_scatter_config(question)
+    count = participant_count_for_question(question)
+    points = housing_scatter_points(
+        question,
+        None,
+        config["x_axis"],
+        config["y_axis"],
+    )
+    return render(
+        request,
+        "course_iframe/housing_results.html",
+        {
+            "count": count,
+            "points": points,
+            "has_your_points": False,
+            "x_axis_label": housing_axis_label(config["x_axis"]),
+            "y_axis_label": housing_axis_label(config["y_axis"]),
+            "x_axis_key": config["x_axis"],
+            "y_axis_key": config["y_axis"],
+            "is_research_view": True,
+        },
+    )
+
+
+@researcher_required
+@require_http_methods(["GET", "POST"])
+def edit_relationship(request):
+    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    form = RelationshipEditForm(request.POST or None, question=question)
+    if request.method == "POST" and form.is_valid():
+        if not form.has_meaningful_changes():
+            messages.info(request, "No changes to save.")
+            return redirect("research-edit-relationship")
+        update_relationship_settings(
+            question_text=form.cleaned_data["question_text"],
+            likert_points=int(form.cleaned_data["likert_points"]),
+            likert_labels=form.labels_for_selected_scale(),
+            relationship_choices=form.relationship_choices_for_save(),
+        )
+        messages.success(request, "Relationship survey updated.")
+        return redirect("research-edit-relationship")
+
+    return render(
+        request,
+        "research/edit_relationship.html",
+        {
+            "form": form,
+            "question": question,
+            "selected_points": int(form["likert_points"].value() or relationship_likert_points(question)),
+        },
+    )
+
+
+@researcher_required
+@require_http_methods(["GET", "POST"])
+def edit_housing(request):
+    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+    form = HousingEditForm(request.POST or None, question=question)
+    if request.method == "POST" and form.is_valid():
+        if not form.has_meaningful_changes():
+            messages.info(request, "No changes to save.")
+            return redirect("research-edit-housing")
+        update_housing_settings(
+            question_text=form.cleaned_data["question_text"],
+            x_axis=form.cleaned_data["x_axis"],
+            y_axis=form.cleaned_data["y_axis"],
+        )
+        messages.success(request, "Housing activity updated.")
+        return redirect("research-edit-housing")
+
+    return render(
+        request,
+        "research/edit_housing.html",
+        {
+            "form": form,
+            "question": question,
         },
     )
 
@@ -288,7 +540,6 @@ def research_export_csv(request):
 
     qs = Response.objects.select_related(
         "participant",
-        "participant__course",
         "activity",
         "question",
     ).order_by("created_at")
@@ -302,32 +553,31 @@ def research_export_csv(request):
     if date_end:
         qs = qs.filter(created_at__date__lte=date_end)
 
+    if activity:
+        payload_columns = list(ACTIVITY_PAYLOAD_COLUMNS.get(activity, []))
+    else:
+        payload_columns = []
+        for slug in ACTIVITY_PAYLOAD_COLUMNS:
+            for column in ACTIVITY_PAYLOAD_COLUMNS[slug]:
+                if column not in payload_columns:
+                    payload_columns.append(column)
+
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="elearning-responses.csv"'
     writer = csv.writer(response)
-    writer.writerow(
-        [
-            "course_id",
-            "participant_id",
-            "activity_slug",
-            "question_text",
-            "question_version",
-            "payload",
-            "created_at",
-        ]
-    )
+    writer.writerow(BASE_CSV_COLUMNS + payload_columns)
     row_count = 0
     for item in qs:
+        payload = item.payload or {}
         writer.writerow(
             [
-                item.participant.course.course_id,
                 item.participant.participant_id,
                 item.activity.slug,
                 item.question.question_text,
                 item.question_version,
-                json.dumps(item.payload, sort_keys=True),
                 item.created_at.isoformat(),
             ]
+            + [payload.get(column, "") for column in payload_columns]
         )
         row_count += 1
 

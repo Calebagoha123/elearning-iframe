@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from config.settings import default_cookie_samesite, env_bool
 
-from .models import Course, ExportLog, Participant, Question, Response
+from .models import ExportLog, Participant, Question, Response
 from .services import (
     HOUSING_QUESTION_SLUG,
     HOUSING_SLUG,
@@ -17,35 +17,45 @@ from .services import (
     make_iframe_signature,
     save_housing_response,
     save_relationship_response,
+    relationship_color_map,
 )
 
 
 @override_settings(
     IFRAME_SIGNING_SECRET="test-secret",
     RESEARCH_ADMIN_PASSWORD="research-pass",
-    VISUALIZATION_MIN_RESPONSES=5,
 )
 class IframeMvpTests(TestCase):
-    def iframe_url(self, course_id="course-a", participant_id="student-1"):
-        sig = make_iframe_signature(course_id, participant_id)
-        return f"{reverse('iframe-entry')}?course_id={course_id}&participant_id={participant_id}&sig={sig}"
+    def iframe_url(self, participant_id="student-1"):
+        sig = make_iframe_signature("", participant_id)
+        return f"{reverse('iframe-entry')}?participant_id={participant_id}&sig={sig}"
 
-    def enter_iframe(self, course_id="course-a", participant_id="student-1"):
-        return self.client.get(self.iframe_url(course_id, participant_id), follow=True)
+    def enter_iframe(self, participant_id="student-1"):
+        return self.client.get(self.iframe_url(participant_id), follow=True)
 
-    def participant(self, course_id="course-a", participant_id="student-1"):
-        return Participant.objects.get(course__course_id=course_id, participant_id=participant_id)
+    def activity_iframe_url(self, activity_slug=RELATIONSHIP_SLUG):
+        return reverse("activity-iframe-entry", args=[activity_slug])
+
+    def enter_activity_iframe(self, activity_slug=RELATIONSHIP_SLUG, pseudoname="student-1"):
+        return self.client.post(
+            reverse("activity-iframe-entry", args=[activity_slug]),
+            {"pseudoname": pseudoname},
+            follow=True,
+        )
+
+    def participant(self, participant_id="student-1"):
+        return Participant.objects.get(participant_id=participant_id)
 
     def add_relationship_responses(self, count):
         question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
         for index in range(count):
-            participant = get_or_create_participant("course-a", f"student-{index}")
+            participant = get_or_create_participant(f"student-{index}")
             save_relationship_response(participant, question, "friend", "Friend")
 
     def add_housing_responses(self, count):
         question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
         for index in range(count):
-            participant = get_or_create_participant("course-a", f"student-{index}")
+            participant = get_or_create_participant(f"student-{index}")
             save_housing_response(
                 participant,
                 question,
@@ -61,28 +71,68 @@ class IframeMvpTests(TestCase):
         response = self.enter_iframe()
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Course activities")
-        self.assertTrue(Course.objects.filter(course_id="course-a").exists())
+        self.assertContains(response, "Activities")
         self.assertTrue(
             Participant.objects.filter(
-                course__course_id="course-a",
                 participant_id="student-1",
             ).exists()
         )
 
+    def test_activity_iframe_entry_prompts_for_moodle_pseudoname(self):
+        response = self.client.get(self.activity_iframe_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Relationship survey")
+        self.assertContains(response, "Pseudoname")
+        self.assertContains(response, "Use the pseudoname shown in Moodle.")
+
+    def test_activity_iframe_entry_starts_requested_activity_without_landing(self):
+        response = self.enter_activity_iframe()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Relationship survey")
+        self.assertNotContains(response, "Course activities")
+        self.assertTrue(
+            Participant.objects.filter(
+                participant_id="student-1",
+            ).exists()
+        )
+
+    def test_housing_iframe_entry_starts_housing_activity(self):
+        response = self.enter_activity_iframe(HOUSING_SLUG, pseudoname="moodle-pseudo-42")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Housing data entry")
+        self.assertNotContains(response, "Course activities")
+        self.assertTrue(
+            Participant.objects.filter(
+                participant_id="moodle-pseudo-42",
+            ).exists()
+        )
+
+    def test_activity_iframe_entry_requires_pseudoname(self):
+        response = self.client.post(
+            reverse("activity-iframe-entry", args=[RELATIONSHIP_SLUG]),
+            {"pseudoname": "   "},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Enter your Moodle pseudoname.")
+        self.assertEqual(Participant.objects.count(), 0)
+
     def test_invalid_iframe_signature_is_rejected(self):
         response = self.client.get(
-            f"{reverse('iframe-entry')}?course_id=course-a&participant_id=student-1&sig=bad"
+            f"{reverse('iframe-entry')}?participant_id=student-1&sig=bad"
         )
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(Participant.objects.count(), 0)
 
-    def test_iframe_signature_does_not_allow_colon_delimiter_collision(self):
-        collision_signature = make_iframe_signature("course-a", "student:1")
+    def test_iframe_signature_does_not_allow_participant_collision(self):
+        collision_signature = make_iframe_signature("", "student:1")
 
         response = self.client.get(
-            f"{reverse('iframe-entry')}?course_id=course-a:student&participant_id=1&sig={collision_signature}"
+            f"{reverse('iframe-entry')}?participant_id=1&sig={collision_signature}"
         )
 
         self.assertEqual(response.status_code, 403)
@@ -96,7 +146,12 @@ class IframeMvpTests(TestCase):
             "relationships-MAX_NUM_FORMS": "1000",
         }
         for index, row in enumerate(rows):
-            payload[f"relationships-{index}-relationship"] = row.get("relationship", "")
+            relationship = row.get("relationship", "")
+            payload[f"relationships-{index}-relationship"] = relationship
+            payload[f"relationships-{index}-income_comparison"] = row.get(
+                "income_comparison",
+                "same" if relationship else "",
+            )
             payload[f"relationships-{index}-other_relationship"] = row.get("other_relationship", "")
         return payload
 
@@ -122,6 +177,10 @@ class IframeMvpTests(TestCase):
             sorted(response.payload["relationship_label"] for response in responses),
             ["Cousin", "Friend"],
         )
+        self.assertEqual(
+            sorted(response.payload["income_comparison_label"] for response in responses),
+            ["Same", "Same"],
+        )
 
     def test_relationship_submission_replaces_previous_relationship_set(self):
         self.enter_iframe()
@@ -144,6 +203,7 @@ class IframeMvpTests(TestCase):
         responses = Response.objects.filter(participant=self.participant(), question=question)
         self.assertEqual(responses.count(), 1)
         self.assertEqual(responses.get().payload["relationship_label"], "Parent")
+        self.assertEqual(responses.get().payload["income_comparison_value"], "same")
 
     def test_relationship_submission_requires_at_least_one_relationship(self):
         self.enter_iframe()
@@ -180,16 +240,110 @@ class IframeMvpTests(TestCase):
 
         self.assertContains(response, 'class="relationship-other is-hidden"', html=False)
         self.assertContains(response, 'data-add-relationship', html=False)
+        self.assertContains(response, 'class="likert-scale"', html=False)
+        self.assertContains(response, "Lower than theirs")
 
-    def test_relationship_results_are_locked_until_threshold(self):
+    def test_research_edit_relationship_changes_income_scale(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+
+        response = self.client.post(
+            reverse("research-edit-relationship"),
+            {
+                "question_text": question.question_text,
+                "relationship_choices": "Friend\nParent\nSibling",
+                "likert_points": "7",
+                "label_7_much_lower": "Much lower than theirs",
+                "label_7_lower": "Lower than theirs",
+                "label_7_slightly_lower": "Slightly lower than theirs",
+                "label_7_same": "Same",
+                "label_7_slightly_higher": "Slightly higher than theirs",
+                "label_7_higher": "Higher than theirs",
+                "label_7_much_higher": "Much higher than theirs",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        question.refresh_from_db()
+        self.assertFalse(question.is_active)
+        new_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.assertEqual(new_question.version, question.version + 1)
+        self.assertEqual(new_question.options_json["likert_points"], 7)
+
         self.enter_iframe()
-        self.add_relationship_responses(4)
+        form_response = self.client.get(reverse("relationship-activity"))
+
+        self.assertContains(form_response, "Slightly lower")
+        self.assertContains(form_response, "Slightly higher")
+
+    def test_research_edit_relationship_changes_relationship_options(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+
+        response = self.client.post(
+            reverse("research-edit-relationship"),
+            {
+                "question_text": question.question_text,
+                "relationship_choices": "Friend\nCousin\nMentor",
+                "likert_points": "3",
+                "label_3_lower": "Lower than theirs",
+                "label_3_same": "Same",
+                "label_3_higher": "Higher than theirs",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        question.refresh_from_db()
+        self.assertFalse(question.is_active)
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.assertEqual(
+            [choice["label"] for choice in question.options_json["choices"]],
+            ["Friend", "Cousin", "Mentor"],
+        )
+
+        self.enter_iframe()
+        form_response = self.client.get(reverse("relationship-activity"))
+        self.assertContains(form_response, "Cousin")
+        self.assertContains(form_response, "Mentor")
+
+    def test_research_edit_relationship_noops_when_unchanged(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+
+        response = self.client.post(
+            reverse("research-edit-relationship"),
+            {
+                "question_text": question.question_text,
+                "relationship_choices": "\n".join(choice["label"] for choice in question.options_json["choices"]),
+                "likert_points": "5",
+                "label_5_much_lower": "Much lower than theirs",
+                "label_5_lower": "Lower than theirs",
+                "label_5_same": "Same",
+                "label_5_higher": "Higher than theirs",
+                "label_5_much_higher": "Much higher than theirs",
+            },
+            follow=True,
+        )
+
+        question.refresh_from_db()
+        self.assertTrue(question.is_active)
+        self.assertEqual(active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG).pk, question.pk)
+        self.assertContains(response, "No changes to save.")
+
+    def test_relationship_results_are_visible_without_threshold(self):
+        self.enter_iframe()
+        self.add_relationship_responses(1)
 
         response = self.client.get(reverse("relationship-results"))
 
-        self.assertContains(response, "Results unlock at 5 participants.")
+        self.assertContains(response, "Relationship results")
+        self.assertContains(response, "Friend")
+        self.assertContains(response, "Income comparison")
+        self.assertNotContains(response, "Results unlock")
 
-    def test_relationship_results_are_locked_when_one_participant_submits_many_relationships(self):
+    def test_relationship_results_show_many_relationships_from_one_participant(self):
         self.enter_iframe()
         self.client.post(
             reverse("relationship-activity"),
@@ -206,16 +360,43 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("relationship-results"))
 
-        self.assertContains(response, "Results unlock at 5 participants.")
+        self.assertContains(response, "Relationship results")
+        self.assertContains(response, "Friend")
+        self.assertNotContains(response, "Results unlock")
 
-    def test_relationship_results_show_word_cloud_at_threshold(self):
+    def test_relationship_results_show_word_cloud(self):
         self.enter_iframe()
-        self.add_relationship_responses(settings.VISUALIZATION_MIN_RESPONSES)
+        self.add_relationship_responses(2)
 
         response = self.client.get(reverse("relationship-results"))
 
         self.assertContains(response, "Relationship results")
         self.assertContains(response, "Friend")
+
+    def test_relationship_edit_starts_new_result_version(self):
+        self.add_relationship_responses(2)
+        old_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        self.client.post(
+            reverse("research-edit-relationship"),
+            {
+                "question_text": "Updated relationship wording?",
+                "relationship_choices": "Friend\nParent\nSibling",
+                "likert_points": "3",
+                "label_3_lower": "Lower than theirs",
+                "label_3_same": "Same",
+                "label_3_higher": "Higher than theirs",
+            },
+        )
+
+        new_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.assertNotEqual(new_question.pk, old_question.pk)
+        self.assertEqual(Response.objects.filter(question=old_question).count(), 2)
+
+        response = self.client.get(reverse("research-relationship-plots"))
+        self.assertContains(response, "No responses yet.")
+        self.assertNotContains(response, "Friend")
 
     def test_housing_entries_allow_multiple_rows(self):
         self.enter_iframe()
@@ -237,32 +418,50 @@ class IframeMvpTests(TestCase):
             2,
         )
 
-    def test_housing_results_compare_at_threshold(self):
+    def test_housing_results_compare_without_threshold(self):
         self.enter_iframe()
-        self.add_housing_responses(5)
+        self.add_housing_responses(1)
 
         response = self.client.get(reverse("housing-results"))
 
         self.assertContains(response, "Housing comparison")
-        self.assertContains(response, "North")
-        self.assertContains(response, "Cohort")
+        self.assertContains(response, "Total monthly rent")
+        self.assertContains(response, "Number of rooms")
+        self.assertContains(response, "Cohort entries")
 
-    def test_housing_results_are_locked_when_one_participant_submits_many_entries(self):
+    def test_housing_submission_redirects_back_to_entry_form(self):
         self.enter_iframe()
-        for index in range(5):
-            self.client.post(
-                reverse("housing-activity"),
-                {
-                    "district": f"District {index}",
-                    "monthly_rent": "1200.00",
-                    "rooms": "2",
-                    "size_sqm": "",
-                },
-            )
 
-        response = self.client.get(reverse("housing-results"))
+        response = self.client.post(
+            reverse("housing-activity"),
+            {
+                "district": "North",
+                "monthly_rent": "1200.00",
+                "rooms": "2",
+                "size_sqm": "",
+            },
+        )
 
-        self.assertContains(response, "Results unlock at 5 participants.")
+        self.assertRedirects(response, reverse("housing-activity"))
+
+    def test_research_edit_housing_noops_when_unchanged(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+
+        response = self.client.post(
+            reverse("research-edit-housing"),
+            {
+                "question_text": question.question_text,
+                "x_axis": "rooms",
+                "y_axis": "monthly_rent",
+            },
+            follow=True,
+        )
+
+        question.refresh_from_db()
+        self.assertTrue(question.is_active)
+        self.assertEqual(active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG).pk, question.pk)
+        self.assertContains(response, "No changes to save.")
 
     def test_research_dashboard_and_csv_require_login(self):
         dashboard = self.client.get(reverse("research-dashboard"))
@@ -280,10 +479,26 @@ class IframeMvpTests(TestCase):
 
         self.assertContains(response, "Participants")
         self.assertContains(response, "<strong>3</strong>", html=True)
-        self.assertContains(response, "Responses")
-        self.assertContains(response, "<strong>5</strong>", html=True)
         self.assertContains(response, "Relationship survey")
         self.assertContains(response, "Housing data entry")
+        self.assertContains(response, "<strong>2</strong>", html=True)
+        self.assertContains(response, reverse("research-edit-relationship"))
+        self.assertContains(response, reverse("research-edit-housing"))
+        self.assertContains(response, reverse("research-relationship-plots"))
+        self.assertContains(response, reverse("research-housing-plots"))
+
+    def test_research_plot_pages_show_cohort_results(self):
+        self.add_relationship_responses(2)
+        self.add_housing_responses(2)
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        relationship = self.client.get(reverse("research-relationship-plots"))
+        housing = self.client.get(reverse("research-housing-plots"))
+
+        self.assertContains(relationship, "Relationship results")
+        self.assertContains(relationship, "Friend")
+        self.assertContains(housing, "Housing comparison")
+        self.assertContains(housing, "data-scatter-toggle")
 
     def test_research_login_and_csv_export(self):
         self.add_relationship_responses(1)
@@ -298,7 +513,7 @@ class IframeMvpTests(TestCase):
         self.assertEqual(login.status_code, 200)
         self.assertEqual(export.status_code, 200)
         self.assertEqual(export["Content-Type"], "text/csv")
-        self.assertContains(export, "course_id,participant_id,activity_slug")
+        self.assertContains(export, "participant_id,activity_slug")
         self.assertEqual(ExportLog.objects.count(), 1)
 
     def test_research_login_rejects_external_next_redirect(self):
@@ -330,6 +545,12 @@ class IframeMvpTests(TestCase):
             Question.objects.filter(activity__slug=RELATIONSHIP_SLUG, slug=RELATIONSHIP_QUESTION_SLUG).exists()
         )
         self.assertTrue(Question.objects.filter(activity__slug=HOUSING_SLUG, slug=HOUSING_QUESTION_SLUG).exists())
+
+    def test_default_relationship_options_get_distinct_colors(self):
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        colors = relationship_color_map(question)
+
+        self.assertEqual(len(colors), len(set(colors.values())))
 
 
 class SettingsTests(SimpleTestCase):

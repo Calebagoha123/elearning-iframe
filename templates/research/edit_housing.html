@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Edit housing activity{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">Researcher · Activity</p>
+    <h1>Housing data entry</h1>
+  </div>
+  <a class="text-link" href="{% url 'research-dashboard' %}">&larr; Dashboard</a>
+</header>
+
+<section class="panel">
+  <form
+    method="post"
+    class="form-stack"
+    data-confirm-versioning="Saving creates a new active version of this question. Existing responses stay tied to the previous version and will no longer be included in the current cohort plots. Continue?"
+  >
+    {% csrf_token %}
+
+    <fieldset>
+      <legend>Question wording</legend>
+      <label>
+        <span>{{ form.question_text.label }}</span>
+        {{ form.question_text }}
+        {% if form.question_text.errors %}<p class="error">{{ form.question_text.errors|striptags }}</p>{% endif %}
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Participant scatter plot</legend>
+      <p class="muted">Choose which variables form the X and Y axes of the comparison scatter shown to participants.</p>
+      <div class="axis-grid">
+        <label>
+          <span>{{ form.x_axis.label }}</span>
+          {{ form.x_axis }}
+          {% if form.x_axis.errors %}<p class="error">{{ form.x_axis.errors|striptags }}</p>{% endif %}
+        </label>
+        <label>
+          <span>{{ form.y_axis.label }}</span>
+          {{ form.y_axis }}
+          {% if form.y_axis.errors %}<p class="error">{{ form.y_axis.errors|striptags }}</p>{% endif %}
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button class="button" type="submit" data-save-changes disabled>Save changes</button>
+    </div>
+  </form>
+</section>
+<script>
+  (() => {
+    const form = document.querySelector("[data-confirm-versioning]");
+    if (!form) return;
+    const saveButton = form.querySelector("[data-save-changes]");
+    const serialize = () => Array
+      .from(new FormData(form).entries())
+      .filter(([key]) => key !== "csrfmiddlewaretoken")
+      .map(([key, value]) => `${key}=${value}`)
+      .join("&");
+    const initialState = serialize();
+    const updateSaveState = () => {
+      if (saveButton) saveButton.disabled = serialize() === initialState;
+    };
+    form.addEventListener("input", updateSaveState);
+    form.addEventListener("change", updateSaveState);
+    updateSaveState();
+    form.addEventListener("submit", event => {
+      if (saveButton && saveButton.disabled) {
+        event.preventDefault();
+        return;
+      }
+      if (!window.confirm(form.dataset.confirmVersioning)) {
+        event.preventDefault();
+      }
+    });
+  })();
+</script>
+{% endblock %}
