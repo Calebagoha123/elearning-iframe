@@ -13,13 +13,20 @@ def env_bool(name, default):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name, default):
+    value = os.getenv(name)
+    if value is None:
+        value = default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def default_cookie_samesite(debug):
     return "Lax" if debug else "None"
 
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -109,6 +116,8 @@ CSRF_COOKIE_SAMESITE = COOKIE_SAMESITE
 CSRF_COOKIE_SECURE = COOKIE_SECURE
 SESSION_COOKIE_SAMESITE = COOKIE_SAMESITE
 SESSION_COOKIE_SECURE = COOKIE_SECURE
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 IFRAME_SIGNING_SECRET = os.getenv("IFRAME_SIGNING_SECRET", "dev-iframe-secret")
 RESEARCH_ADMIN_PASSWORD = os.getenv("RESEARCH_ADMIN_PASSWORD", "dev-admin-password")
