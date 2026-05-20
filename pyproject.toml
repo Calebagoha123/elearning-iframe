@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Django MVP for iframe-based e-learning activities."
 requires-python = ">=3.12"
 dependencies = [
-  "Django>=5.2,<6.0",
+  "Django>=5.2,<7.0",
   "psycopg[binary,pool]>=3.2,<4.0",
   "gunicorn>=23.0,<24.0",
   "sentry-sdk[django]>=2.0,<3.0",
