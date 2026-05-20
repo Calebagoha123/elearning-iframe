@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-set -euo pipefail
+set -eu
 
 # Wait for the database to accept TCP connections before running migrations.
 # Cheap (no extra deps): poll the host/port from DATABASE_URL.

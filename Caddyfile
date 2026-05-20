@@ -1,10 +1,10 @@
-:80 {
-    encode gzip zstd
+{$CADDY_SITE_ADDRESS} {
+	encode gzip zstd
 
-    handle_path /static/* {
-        root * /srv/staticfiles
-        file_server
-    }
+	handle_path /static/* {
+		root * /srv/staticfiles
+		file_server
+	}
 
-    reverse_proxy web:8000
+	reverse_proxy web:8000
 }

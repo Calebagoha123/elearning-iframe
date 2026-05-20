@@ -87,16 +87,30 @@ RELATIONSHIP_CSV_COLUMNS = [
 ]
 
 
-def housing_csv_columns():
+def _add_payload_column(columns, column):
+    if column and not column.endswith("_meta") and column not in columns:
+        columns.append(column)
+
+
+def housing_csv_columns(rows=None):
     question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
-    return [field["key"] for field in housing_schema(question)]
+    columns = []
+    for field in housing_schema(question):
+        _add_payload_column(columns, field["key"])
+    if rows is not None:
+        for item in rows:
+            if item.activity.slug != HOUSING_SLUG:
+                continue
+            for column in (item.payload or {}):
+                _add_payload_column(columns, column)
+    return columns
 
 
-def activity_payload_columns(slug):
+def activity_payload_columns(slug, rows=None):
     if slug == RELATIONSHIP_SLUG:
         return list(RELATIONSHIP_CSV_COLUMNS)
     if slug == HOUSING_SLUG:
-        return housing_csv_columns()
+        return housing_csv_columns(rows)
     return []
 
 
@@ -682,12 +696,13 @@ def research_export_csv(request):
     if date_end:
         qs = qs.filter(created_at__date__lte=date_end)
 
+    rows = list(qs)
     if activity:
-        payload_columns = activity_payload_columns(activity)
+        payload_columns = activity_payload_columns(activity, rows)
     else:
         payload_columns = []
         for slug in (RELATIONSHIP_SLUG, HOUSING_SLUG):
-            for column in activity_payload_columns(slug):
+            for column in activity_payload_columns(slug, rows):
                 if column not in payload_columns:
                     payload_columns.append(column)
 
@@ -696,7 +711,7 @@ def research_export_csv(request):
     writer = csv.writer(response)
     writer.writerow(BASE_CSV_COLUMNS + payload_columns)
     row_count = 0
-    for item in qs:
+    for item in rows:
         payload = item.payload or {}
         writer.writerow(
             [

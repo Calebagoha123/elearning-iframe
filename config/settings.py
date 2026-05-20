@@ -174,6 +174,10 @@ IFRAME_SIGNING_SECRET = os.getenv("IFRAME_SIGNING_SECRET", "dev-iframe-secret")
 # detects which form is in use.
 RESEARCH_ADMIN_PASSWORD = os.getenv("RESEARCH_ADMIN_PASSWORD", "dev-admin-password")
 RESEARCH_ADMIN_PASSWORD_HASH = os.getenv("RESEARCH_ADMIN_PASSWORD_HASH", "")
+if not DEBUG and not RESEARCH_ADMIN_PASSWORD_HASH:
+    raise ImproperlyConfigured(
+        "Set RESEARCH_ADMIN_PASSWORD_HASH in production. Generate it with manage.py hash_admin_password."
+    )
 
 NOMINATIM_BASE_URL = os.getenv("NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org")
 NOMINATIM_USER_AGENT = os.getenv(

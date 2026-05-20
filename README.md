@@ -65,6 +65,7 @@ certificate from Let's Encrypt for the hostname in `Caddyfile`.
 | Variable | Purpose |
 | --- | --- |
 | `DJANGO_SECRET_KEY` | Django cryptographic key (rotate to invalidate sessions) |
+| `CADDY_SITE_ADDRESS` | Public HTTPS site address for Caddy/Let's Encrypt, e.g. `elearning.example.edu` |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated list including your public hostname |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated, e.g. `https://elearning.example.edu` |
 | `DJANGO_COOKIE_SAMESITE` | `None` for cross-origin iframe embedding |

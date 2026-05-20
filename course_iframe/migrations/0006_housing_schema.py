@@ -39,11 +39,6 @@ DEFAULT_HOUSING_FIELDS = [
 
 def seed_housing_schema(apps, schema_editor):
     Question = apps.get_model("course_iframe", "Question")
-    Response = apps.get_model("course_iframe", "Response")
-
-    # Drop legacy housing entries: the new schema/payload format is incompatible
-    # with untyped earlier rows.
-    Response.objects.filter(activity__slug="housing").delete()
 
     for question in Question.objects.filter(activity__slug="housing"):
         options = dict(question.options_json or {})

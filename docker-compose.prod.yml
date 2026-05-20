@@ -16,7 +16,7 @@ services:
     environment:
       POSTGRES_DB: elearning
       POSTGRES_USER: elearning
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,6 +28,8 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:?set CADDY_SITE_ADDRESS}
     ports:
       - "80:80"
       - "443:443"
@@ -50,7 +52,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       BACKUP_RETENTION_DAYS: "14"
     volumes:
       - postgres_backups:/var/backups/db
@@ -62,8 +64,11 @@ services:
         while :; do
           stamp="$$(date -u +%Y%m%dT%H%M%SZ)"
           target="/var/backups/db/elearning-$$stamp.sql.gz"
+          raw="/var/backups/db/elearning-$$stamp.sql"
           echo "[backup] dumping to $$target"
-          pg_dump -h db -U elearning -d elearning | gzip > "$$target"
+          pg_dump -h db -U elearning -d elearning -f "$$raw"
+          gzip -c "$$raw" > "$$target"
+          rm -f "$$raw"
           find /var/backups/db -name 'elearning-*.sql.gz' -type f -mtime +$${BACKUP_RETENTION_DAYS} -delete
           sleep 86400
         done

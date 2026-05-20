@@ -602,6 +602,30 @@ class IframeMvpTests(TestCase):
         self.assertContains(export, "participant_id,activity_slug")
         self.assertEqual(ExportLog.objects.count(), 1)
 
+    def test_housing_csv_export_keeps_historical_schema_columns(self):
+        self.add_housing_responses(1)
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        old_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        schema = [
+            field
+            for field in self.default_housing_schema_payload()
+            if field["key"] != "size_sqm"
+        ]
+
+        self.client.post(
+            reverse("research-edit-housing"),
+            {
+                "question_text": old_question.question_text,
+                "x_axis": "rooms",
+                "y_axis": "monthly_rent",
+                **self.schema_formset_payload(schema),
+            },
+        )
+        export = self.client.get(f"{reverse('research-export-csv')}?activity=housing")
+
+        header = export.content.decode().splitlines()[0]
+        self.assertIn("size_sqm", header)
+
     def test_research_login_rejects_external_next_redirect(self):
         response = self.client.post(
             f"{reverse('research-login')}?next=https://example.com/steal",
