@@ -1,10 +1,11 @@
 from unittest.mock import patch
 
 from django.conf import settings
+from django.core.management import call_command
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from config.settings import default_cookie_samesite, env_bool
+from config.settings import default_cookie_samesite, env_bool, env_frame_ancestors
 
 from .models import ExportLog, Participant, Question, Response
 from .services import (
@@ -14,6 +15,7 @@ from .services import (
     RELATIONSHIP_SLUG,
     active_question,
     get_or_create_participant,
+    housing_scatter_points,
     make_iframe_signature,
     save_housing_response,
     save_relationship_response,
@@ -24,6 +26,7 @@ from .services import (
 @override_settings(
     IFRAME_SIGNING_SECRET="test-secret",
     RESEARCH_ADMIN_PASSWORD="research-pass",
+    NOMINATIM_VERIFY=False,
 )
 class IframeMvpTests(TestCase):
     def iframe_url(self, participant_id="student-1"):
@@ -398,18 +401,24 @@ class IframeMvpTests(TestCase):
         self.assertContains(response, "No responses yet.")
         self.assertNotContains(response, "Friend")
 
+    def housing_form_payload(self, district="North Berlin", rent="1200.00", rooms="2", size=""):
+        return {
+            "district": district,
+            "district_osm_type": "relation",
+            "district_osm_id": "62422",
+            "district_display_name": district,
+            "monthly_rent": rent,
+            "rooms": rooms,
+            "size_sqm": size,
+        }
+
     def test_housing_entries_allow_multiple_rows(self):
         self.enter_iframe()
 
-        for district in ["North", "South"]:
+        for district in ["North Berlin", "South Berlin"]:
             response = self.client.post(
                 reverse("housing-activity"),
-                {
-                    "district": district,
-                    "monthly_rent": "1200.00",
-                    "rooms": "2",
-                    "size_sqm": "",
-                },
+                self.housing_form_payload(district=district),
             )
             self.assertEqual(response.status_code, 302)
 
@@ -425,7 +434,7 @@ class IframeMvpTests(TestCase):
         response = self.client.get(reverse("housing-results"))
 
         self.assertContains(response, "Housing comparison")
-        self.assertContains(response, "Total monthly rent")
+        self.assertContains(response, "Monthly rent")
         self.assertContains(response, "Number of rooms")
         self.assertContains(response, "Cohort entries")
 
@@ -434,17 +443,68 @@ class IframeMvpTests(TestCase):
 
         response = self.client.post(
             reverse("housing-activity"),
-            {
-                "district": "North",
-                "monthly_rent": "1200.00",
-                "rooms": "2",
-                "size_sqm": "",
-            },
+            self.housing_form_payload(),
         )
 
         self.assertRedirects(response, reverse("housing-activity"))
 
+    def schema_formset_payload(self, fields, prefix="fields"):
+        payload = {
+            f"{prefix}-TOTAL_FORMS": str(len(fields)),
+            f"{prefix}-INITIAL_FORMS": str(len(fields)),
+            f"{prefix}-MIN_NUM_FORMS": "0",
+            f"{prefix}-MAX_NUM_FORMS": "1000",
+        }
+        for index, field in enumerate(fields):
+            payload[f"{prefix}-{index}-key"] = field.get("key", "")
+            payload[f"{prefix}-{index}-label"] = field["label"]
+            payload[f"{prefix}-{index}-field_type"] = field["type"]
+            if field.get("required"):
+                payload[f"{prefix}-{index}-required"] = "on"
+            payload[f"{prefix}-{index}-help_text"] = field.get("help_text", "")
+            payload[f"{prefix}-{index}-options_text"] = "\n".join(
+                option["label"] for option in field.get("options", [])
+            )
+            payload[f"{prefix}-{index}-ORDER"] = str(index)
+        return payload
+
+    def default_housing_schema_payload(self):
+        return [
+            {"key": "district", "label": "District", "type": "place", "required": True,
+             "help_text": "Start typing a real district or city, then pick a suggestion."},
+            {"key": "monthly_rent", "label": "Monthly rent", "type": "currency_eur",
+             "required": True, "help_text": "Total monthly rent in euros."},
+            {"key": "rooms", "label": "Number of rooms", "type": "decimal", "required": True,
+             "help_text": "Use .5 for a half room (e.g. 2.5)."},
+            {"key": "size_sqm", "label": "Size (m²)", "type": "decimal", "required": False,
+             "help_text": "Optional. Floor area in square metres."},
+        ]
+
     def test_research_edit_housing_noops_when_unchanged(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+
+        payload = {
+            "question_text": question.question_text,
+            "x_axis": "rooms",
+            "y_axis": "monthly_rent",
+            **self.schema_formset_payload(self.default_housing_schema_payload()),
+        }
+        response = self.client.post(reverse("research-edit-housing"), payload, follow=True)
+
+        question.refresh_from_db()
+        self.assertTrue(question.is_active)
+        self.assertEqual(active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG).pk, question.pk)
+        self.assertContains(response, "No changes to save.")
+
+    def test_research_edit_housing_save_starts_disabled(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        response = self.client.get(reverse("research-edit-housing"))
+
+        self.assertContains(response, 'data-save-changes disabled')
+
+    def test_research_edit_housing_axes_only_updates_current_question(self):
         self.client.post(reverse("research-login"), {"password": "research-pass"})
         question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
 
@@ -452,16 +512,20 @@ class IframeMvpTests(TestCase):
             reverse("research-edit-housing"),
             {
                 "question_text": question.question_text,
-                "x_axis": "rooms",
-                "y_axis": "monthly_rent",
+                "x_axis": "monthly_rent",
+                "y_axis": "rooms",
+                **self.schema_formset_payload(self.default_housing_schema_payload()),
             },
             follow=True,
         )
 
         question.refresh_from_db()
-        self.assertTrue(question.is_active)
-        self.assertEqual(active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG).pk, question.pk)
-        self.assertContains(response, "No changes to save.")
+        active = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        self.assertEqual(active.pk, question.pk)
+        self.assertEqual(active.version, question.version)
+        self.assertTrue(active.is_active)
+        self.assertEqual(active.options_json["viz"], {"x_axis": "monthly_rent", "y_axis": "rooms"})
+        self.assertContains(response, "Housing scatter plot updated.")
 
     def test_research_dashboard_and_csv_require_login(self):
         dashboard = self.client.get(reverse("research-dashboard"))
@@ -500,6 +564,28 @@ class IframeMvpTests(TestCase):
         self.assertContains(housing, "Housing comparison")
         self.assertContains(housing, "data-scatter-toggle")
 
+    def test_seed_demo_responses_populates_visualization_data(self):
+        call_command(
+            "seed_demo_responses",
+            participants=6,
+            housing_entries=12,
+            seed=7,
+        )
+        relationship_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        housing_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+
+        self.assertEqual(Participant.objects.filter(participant_id__startswith="demo-").count(), 6)
+        self.assertGreater(Response.objects.filter(question=relationship_question).count(), 6)
+        self.assertEqual(Response.objects.filter(question=housing_question).count(), 12)
+        points = housing_scatter_points(
+            housing_question,
+            None,
+            "rooms",
+            "monthly_rent",
+        )
+        self.assertGreater(len(points), 0)
+        self.assertTrue(points[0]["district"])
+
     def test_research_login_and_csv_export(self):
         self.add_relationship_responses(1)
 
@@ -524,6 +610,33 @@ class IframeMvpTests(TestCase):
 
         self.assertRedirects(response, reverse("research-dashboard"), fetch_redirect_response=False)
 
+    def test_research_login_accepts_hashed_password(self):
+        from django.contrib.auth.hashers import make_password
+        with self.settings(
+            RESEARCH_ADMIN_PASSWORD="not-the-real-password",
+            RESEARCH_ADMIN_PASSWORD_HASH=make_password("hashed-pass-42"),
+        ):
+            response = self.client.post(
+                reverse("research-login"),
+                {"password": "hashed-pass-42"},
+                follow=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "Dashboard")
+
+    def test_research_login_rejects_plaintext_when_hash_is_set(self):
+        from django.contrib.auth.hashers import make_password
+        with self.settings(
+            RESEARCH_ADMIN_PASSWORD="plaintext-pass",
+            RESEARCH_ADMIN_PASSWORD_HASH=make_password("hashed-pass-42"),
+        ):
+            response = self.client.post(
+                reverse("research-login"),
+                {"password": "plaintext-pass"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "not accepted")
+
     def test_research_login_accepts_csrf_checked_browser_post(self):
         client = Client(enforce_csrf_checks=True)
         login_page = client.get(reverse("research-login"))
@@ -540,6 +653,13 @@ class IframeMvpTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Dashboard")
 
+    def test_healthz_returns_ok_when_db_reachable(self):
+        response = self.client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertIn(b"ok", response.content)
+
     def test_seeded_questions_exist(self):
         self.assertTrue(
             Question.objects.filter(activity__slug=RELATIONSHIP_SLUG, slug=RELATIONSHIP_QUESTION_SLUG).exists()
@@ -551,6 +671,133 @@ class IframeMvpTests(TestCase):
         colors = relationship_color_map(question)
 
         self.assertEqual(len(colors), len(set(colors.values())))
+
+    def test_housing_form_renders_dynamic_typed_fields(self):
+        self.enter_iframe()
+
+        response = self.client.get(reverse("housing-activity"))
+
+        self.assertContains(response, 'data-place-input="district"')
+        self.assertContains(response, 'data-currency="eur"')
+        self.assertContains(response, 'inputmode="decimal"')
+        self.assertContains(response, "€")
+
+    def test_housing_rejects_non_numeric_rent(self):
+        self.enter_iframe()
+
+        response = self.client.post(
+            reverse("housing-activity"),
+            self.housing_form_payload(rent="abc"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            Response.objects.filter(activity__slug=HOUSING_SLUG).exists()
+        )
+
+    def test_housing_rejects_negative_rent(self):
+        self.enter_iframe()
+
+        response = self.client.post(
+            reverse("housing-activity"),
+            self.housing_form_payload(rent="-50"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            Response.objects.filter(activity__slug=HOUSING_SLUG).exists()
+        )
+
+    def test_housing_rejects_unverified_place(self):
+        self.enter_iframe()
+
+        payload = self.housing_form_payload()
+        payload["district_osm_type"] = ""
+        payload["district_osm_id"] = ""
+
+        response = self.client.post(reverse("housing-activity"), payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "dropdown suggestions")
+        self.assertFalse(
+            Response.objects.filter(activity__slug=HOUSING_SLUG).exists()
+        )
+
+    def test_research_edit_housing_changes_schema_and_versions(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        old_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        new_schema = self.default_housing_schema_payload()
+        new_schema.append({
+            "key": "",
+            "label": "Year built",
+            "type": "integer",
+            "required": False,
+            "help_text": "",
+        })
+
+        response = self.client.post(
+            reverse("research-edit-housing"),
+            {
+                "question_text": old_question.question_text,
+                "x_axis": "rooms",
+                "y_axis": "monthly_rent",
+                **self.schema_formset_payload(new_schema),
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        old_question.refresh_from_db()
+        self.assertFalse(old_question.is_active)
+        new_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        self.assertEqual(new_question.version, old_question.version + 1)
+        keys = [field["key"] for field in new_question.options_json["fields"]]
+        self.assertIn("year_built", keys)
+
+    def test_student_can_delete_their_own_housing_entry(self):
+        self.enter_iframe()
+        self.client.post(reverse("housing-activity"), self.housing_form_payload())
+        entry = Response.objects.filter(activity__slug=HOUSING_SLUG).get()
+
+        response = self.client.post(reverse("housing-delete-entry", args=[entry.pk]))
+
+        self.assertRedirects(response, reverse("housing-activity"))
+        self.assertFalse(Response.objects.filter(pk=entry.pk).exists())
+
+    def test_student_cannot_delete_someone_elses_housing_entry(self):
+        # Participant A creates an entry
+        self.enter_iframe(participant_id="student-a")
+        self.client.post(reverse("housing-activity"), self.housing_form_payload())
+        entry = Response.objects.filter(activity__slug=HOUSING_SLUG).get()
+
+        # Participant B tries to delete it
+        self.enter_iframe(participant_id="student-b")
+        self.client.post(reverse("housing-delete-entry", args=[entry.pk]))
+
+        self.assertTrue(Response.objects.filter(pk=entry.pk).exists())
+
+    def test_research_edit_housing_preserves_stable_keys_on_rename(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+        old_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        schema = self.default_housing_schema_payload()
+        for field in schema:
+            if field["key"] == "district":
+                field["label"] = "Neighbourhood"
+
+        self.client.post(
+            reverse("research-edit-housing"),
+            {
+                "question_text": old_question.question_text,
+                "x_axis": "rooms",
+                "y_axis": "monthly_rent",
+                **self.schema_formset_payload(schema),
+            },
+        )
+
+        new_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        first = new_question.options_json["fields"][0]
+        self.assertEqual(first["key"], "district")
+        self.assertEqual(first["label"], "Neighbourhood")
 
 
 class SettingsTests(SimpleTestCase):
@@ -566,6 +813,20 @@ class SettingsTests(SimpleTestCase):
     def test_cookie_samesite_default_matches_http_local_and_https_iframe_modes(self):
         self.assertEqual(default_cookie_samesite(debug=True), "Lax")
         self.assertEqual(default_cookie_samesite(debug=False), "None")
+
+    def test_frame_ancestors_accepts_space_or_comma_separated_origins(self):
+        with patch.dict(
+            "os.environ",
+            {"FRAME_ANCESTORS_FOR_TEST": "https://moodle.example.edu, https://lms.example.edu https://embed.example.edu"},
+        ):
+            self.assertEqual(
+                env_frame_ancestors("FRAME_ANCESTORS_FOR_TEST", "'self'"),
+                [
+                    "https://moodle.example.edu",
+                    "https://lms.example.edu",
+                    "https://embed.example.edu",
+                ],
+            )
 
     def test_test_environment_uses_http_compatible_cookies(self):
         self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")

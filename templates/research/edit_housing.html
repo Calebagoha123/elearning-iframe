@@ -14,7 +14,7 @@
 <section class="panel">
   <form
     method="post"
-    class="form-stack"
+    class="form-stack housing-schema-editor"
     data-confirm-versioning="Saving creates a new active version of this question. Existing responses stay tied to the previous version and will no longer be included in the current cohort plots. Continue?"
   >
     {% csrf_token %}
@@ -28,9 +28,96 @@
       </label>
     </fieldset>
 
+    <fieldset class="housing-fields-fieldset">
+      <legend>Housing fields</legend>
+      <p class="muted">Define what students are asked. Drag to reorder, change field types, and add or remove fields. Type changes apply to new submissions only.</p>
+
+      {{ field_formset.management_form }}
+
+      <ol class="housing-fields-list" data-housing-fields>
+        {% for sub in field_formset.forms %}
+          <li class="housing-field-row" data-housing-field-row>
+            <div class="housing-field-row__head">
+              <button type="button" class="icon-button" data-housing-field-move="up" aria-label="Move up">&uarr;</button>
+              <button type="button" class="icon-button" data-housing-field-move="down" aria-label="Move down">&darr;</button>
+              <button type="button" class="icon-button housing-field-row__delete" data-housing-field-delete aria-label="Remove field">&times;</button>
+            </div>
+            <div class="housing-field-row__grid">
+              <label>
+                <span>Label</span>
+                {{ sub.label }}
+              </label>
+              <label>
+                <span>Field type</span>
+                {{ sub.field_type }}
+              </label>
+              <label class="housing-field-row__required">
+                <span>Required?</span>
+                {{ sub.required }}
+              </label>
+              <label class="housing-field-row__help">
+                <span>Help text (optional)</span>
+                {{ sub.help_text }}
+              </label>
+              <label class="housing-field-row__options" data-housing-field-options>
+                <span>Choice options</span>
+                {{ sub.options_text }}
+              </label>
+            </div>
+            {{ sub.key }}
+            {{ sub.delete }}
+            {{ sub.ORDER }}
+            {% if sub.errors %}<p class="error">{{ sub.errors|striptags }}</p>{% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+
+      <template data-housing-field-template>
+        <li class="housing-field-row" data-housing-field-row>
+          <div class="housing-field-row__head">
+            <button type="button" class="icon-button" data-housing-field-move="up" aria-label="Move up">&uarr;</button>
+            <button type="button" class="icon-button" data-housing-field-move="down" aria-label="Move down">&darr;</button>
+            <button type="button" class="icon-button housing-field-row__delete" data-housing-field-delete aria-label="Remove field">&times;</button>
+          </div>
+          <div class="housing-field-row__grid">
+            <label>
+              <span>Label</span>
+              {{ field_formset.empty_form.label }}
+            </label>
+            <label>
+              <span>Field type</span>
+              {{ field_formset.empty_form.field_type }}
+            </label>
+            <label class="housing-field-row__required">
+              <span>Required?</span>
+              {{ field_formset.empty_form.required }}
+            </label>
+            <label class="housing-field-row__help">
+              <span>Help text (optional)</span>
+              {{ field_formset.empty_form.help_text }}
+            </label>
+            <label class="housing-field-row__options" data-housing-field-options>
+              <span>Choice options</span>
+              {{ field_formset.empty_form.options_text }}
+            </label>
+          </div>
+          {{ field_formset.empty_form.key }}
+          {{ field_formset.empty_form.delete }}
+          {{ field_formset.empty_form.ORDER }}
+        </li>
+      </template>
+
+      <div class="form-actions">
+        <button type="button" class="button button-secondary button-small" data-housing-field-add>+ Add field</button>
+      </div>
+      {% if field_formset.non_form_errors %}
+        <p class="error">{{ field_formset.non_form_errors|striptags }}</p>
+      {% endif %}
+    </fieldset>
+
     <fieldset>
       <legend>Participant scatter plot</legend>
-      <p class="muted">Choose which variables form the X and Y axes of the comparison scatter shown to participants.</p>
+      <p class="muted">Pick which numeric fields form the comparison scatter shown to participants. Only numeric fields appear here.</p>
       <div class="axis-grid">
         <label>
           <span>{{ form.x_axis.label }}</span>
@@ -50,32 +137,108 @@
     </div>
   </form>
 </section>
+
 <script>
-  (() => {
-    const form = document.querySelector("[data-confirm-versioning]");
-    if (!form) return;
-    const saveButton = form.querySelector("[data-save-changes]");
-    const serialize = () => Array
-      .from(new FormData(form).entries())
-      .filter(([key]) => key !== "csrfmiddlewaretoken")
-      .map(([key, value]) => `${key}=${value}`)
-      .join("&");
-    const initialState = serialize();
-    const updateSaveState = () => {
-      if (saveButton) saveButton.disabled = serialize() === initialState;
-    };
-    form.addEventListener("input", updateSaveState);
-    form.addEventListener("change", updateSaveState);
-    updateSaveState();
-    form.addEventListener("submit", event => {
-      if (saveButton && saveButton.disabled) {
-        event.preventDefault();
-        return;
-      }
-      if (!window.confirm(form.dataset.confirmVersioning)) {
-        event.preventDefault();
+(() => {
+  const form = document.querySelector(".housing-schema-editor");
+  if (!form) return;
+  const list = form.querySelector("[data-housing-fields]");
+  const template = form.querySelector("[data-housing-field-template]");
+  const totalForms = form.querySelector("input[name='fields-TOTAL_FORMS']");
+  const saveButton = form.querySelector("[data-save-changes]");
+  let initialState = "";
+  let initialVersionedState = "";
+
+  const serialize = (includeField = () => true) => Array
+    .from(new FormData(form).entries())
+    .filter(([key]) => key !== "csrfmiddlewaretoken" && includeField(key))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+  const serializeVersionedFields = () => serialize(key => !["x_axis", "y_axis"].includes(key));
+
+  const updateSaveState = () => {
+    if (saveButton) saveButton.disabled = serialize() === initialState;
+  };
+
+  const reindex = () => {
+    const rows = list.querySelectorAll("[data-housing-field-row]");
+    rows.forEach((row, index) => {
+      row.querySelectorAll("input, select, textarea").forEach(el => {
+        if (el.name) el.name = el.name.replace(/fields-(\d+|__prefix__)-/, `fields-${index}-`);
+        if (el.id) el.id = el.id.replace(/id_fields-(\d+|__prefix__)-/, `id_fields-${index}-`);
+      });
+      const orderField = row.querySelector("input[name$='-ORDER']");
+      if (orderField) orderField.value = String(index);
+    });
+    if (totalForms) totalForms.value = String(rows.length);
+  };
+
+  const syncOptionVisibility = row => {
+    const typeSelect = row.querySelector("select[name$='-field_type']");
+    const optionsLabel = row.querySelector("[data-housing-field-options]");
+    if (!typeSelect || !optionsLabel) return;
+    optionsLabel.style.display = typeSelect.value === "choice" ? "" : "none";
+  };
+
+  const wireRow = row => {
+    syncOptionVisibility(row);
+    row.querySelector("select[name$='-field_type']")?.addEventListener("change", () => {
+      syncOptionVisibility(row);
+      updateSaveState();
+    });
+    row.querySelector("[data-housing-field-delete]")?.addEventListener("click", () => {
+      const deleteField = row.querySelector("input[name$='-delete']");
+      if (deleteField) deleteField.value = "on";
+      row.remove();
+      reindex();
+      updateSaveState();
+    });
+    row.querySelector("[data-housing-field-move='up']")?.addEventListener("click", () => {
+      const prev = row.previousElementSibling;
+      if (prev) {
+        list.insertBefore(row, prev);
+        reindex();
+        updateSaveState();
       }
     });
-  })();
+    row.querySelector("[data-housing-field-move='down']")?.addEventListener("click", () => {
+      const next = row.nextElementSibling;
+      if (next) {
+        list.insertBefore(next, row);
+        reindex();
+        updateSaveState();
+      }
+    });
+  };
+
+  list.querySelectorAll("[data-housing-field-row]").forEach(wireRow);
+  reindex();
+  initialState = serialize();
+  initialVersionedState = serializeVersionedFields();
+  updateSaveState();
+
+  form.querySelector("[data-housing-field-add]")?.addEventListener("click", () => {
+    const fragment = template.content.cloneNode(true);
+    const newRow = fragment.querySelector("[data-housing-field-row]");
+    list.appendChild(newRow);
+    wireRow(newRow);
+    reindex();
+    updateSaveState();
+  });
+
+  form.addEventListener("input", updateSaveState);
+  form.addEventListener("change", updateSaveState);
+
+  form.addEventListener("submit", event => {
+    if (saveButton && saveButton.disabled) {
+      event.preventDefault();
+      return;
+    }
+    const versionedFieldsChanged = serializeVersionedFields() !== initialVersionedState;
+    if (versionedFieldsChanged && !window.confirm(form.dataset.confirmVersioning)) {
+      event.preventDefault();
+    }
+  });
+})();
 </script>
 {% endblock %}

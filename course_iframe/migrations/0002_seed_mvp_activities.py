@@ -53,7 +53,42 @@ def seed_mvp(apps, schema_editor):
         defaults={
             "question_text": "Enter one researched rental property from your local housing market.",
             "field_type": "housing",
-            "options_json": {},
+            "options_json": {
+                "fields": [
+                    {
+                        "key": "district",
+                        "label": "District",
+                        "type": "place",
+                        "required": True,
+                        "help_text": "Start typing a real district or city, then pick a suggestion.",
+                        "options": [],
+                    },
+                    {
+                        "key": "monthly_rent",
+                        "label": "Monthly rent",
+                        "type": "currency_eur",
+                        "required": True,
+                        "help_text": "Total monthly rent in euros.",
+                        "options": [],
+                    },
+                    {
+                        "key": "rooms",
+                        "label": "Number of rooms",
+                        "type": "decimal",
+                        "required": True,
+                        "help_text": "Use .5 for a half room (e.g. 2.5).",
+                        "options": [],
+                    },
+                    {
+                        "key": "size_sqm",
+                        "label": "Size (m²)",
+                        "type": "decimal",
+                        "required": False,
+                        "help_text": "Optional. Floor area in square metres.",
+                        "options": [],
+                    },
+                ],
+            },
             "is_active": True,
         },
     )

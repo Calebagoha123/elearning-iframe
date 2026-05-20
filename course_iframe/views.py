@@ -1,20 +1,28 @@
 import csv
+import logging
 import math
+import secrets
 from functools import wraps
+
+logger = logging.getLogger(__name__)
 
 from django.conf import settings
 from django.contrib import messages
-from django.http import Http404, HttpResponse
+from django.contrib.auth.hashers import check_password
+from django.db import connection
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_http_methods, require_POST
 
 from .forms import (
     ExportFilterForm,
     HousingEditForm,
     HousingEntryForm,
+    HousingFieldFormSetFactory,
     ParticipantEntryForm,
     RelationshipEditForm,
     RelationshipFormSet,
@@ -31,6 +39,7 @@ from .services import (
     housing_axis_label,
     housing_scatter_config,
     housing_scatter_points,
+    housing_schema,
     mvp_activities,
     palette_color_for_relationship,
     participant_count_for_question,
@@ -43,7 +52,8 @@ from .services import (
     remember_participant,
     save_housing_response,
     save_relationship_responses,
-    update_housing_settings,
+    update_housing_schema,
+    update_housing_visualization,
     update_relationship_settings,
     valid_iframe_signature,
 )
@@ -68,21 +78,26 @@ BASE_CSV_COLUMNS = [
     "created_at",
 ]
 
-ACTIVITY_PAYLOAD_COLUMNS = {
-    RELATIONSHIP_SLUG: [
-        "relationship_value",
-        "relationship_label",
-        "income_comparison_value",
-        "income_comparison_label",
-        "income_likert_points",
-    ],
-    HOUSING_SLUG: [
-        "district",
-        "monthly_rent",
-        "rooms",
-        "size_sqm",
-    ],
-}
+RELATIONSHIP_CSV_COLUMNS = [
+    "relationship_value",
+    "relationship_label",
+    "income_comparison_value",
+    "income_comparison_label",
+    "income_likert_points",
+]
+
+
+def housing_csv_columns():
+    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+    return [field["key"] for field in housing_schema(question)]
+
+
+def activity_payload_columns(slug):
+    if slug == RELATIONSHIP_SLUG:
+        return list(RELATIONSHIP_CSV_COLUMNS)
+    if slug == HOUSING_SLUG:
+        return housing_csv_columns()
+    return []
 
 
 def frequency_axis(max_value):
@@ -121,6 +136,26 @@ def researcher_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return wrapper
+
+
+def researcher_actor(request):
+    return request.session.get("researcher_actor", "researcher-session:unknown")
+
+
+@never_cache
+@require_http_methods(["GET", "HEAD"])
+def healthz(request):
+    """Lightweight health check for load balancers and Docker HEALTHCHECK.
+
+    Returns 200 only when the DB is reachable. No auth, no logging.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception:
+        return JsonResponse({"status": "fail"}, status=503)
+    return JsonResponse({"status": "ok"})
 
 
 @require_http_methods(["GET"])
@@ -290,18 +325,19 @@ def relationship_results(request, participant):
 def housing_activity(request, participant):
     question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
     if request.method == "POST":
-        form = HousingEntryForm(request.POST)
+        form = HousingEntryForm(request.POST, question=question)
         if form.is_valid():
             save_housing_response(participant, question, form.cleaned_data)
             messages.success(request, "Housing entry saved. Add another entry or view results when finished.")
             return redirect("housing-activity")
     else:
-        form = HousingEntryForm()
+        form = HousingEntryForm(question=question)
 
     entries = Response.objects.filter(
         participant=participant,
         activity__slug=HOUSING_SLUG,
     ).order_by("-created_at")
+    summary_fields = housing_schema(question)[:2]
     return render(
         request,
         "course_iframe/housing_form.html",
@@ -310,8 +346,24 @@ def housing_activity(request, participant):
             "entries": entries,
             "participant": participant,
             "question": question,
+            "summary_fields": summary_fields,
         },
     )
+
+
+@student_required
+@require_POST
+def housing_delete_entry(request, participant, response_id):
+    deleted, _ = Response.objects.filter(
+        pk=response_id,
+        participant=participant,
+        activity__slug=HOUSING_SLUG,
+    ).delete()
+    if deleted:
+        messages.success(request, "Housing entry removed.")
+    else:
+        messages.error(request, "That entry could not be removed.")
+    return redirect("housing-activity")
 
 
 @student_required
@@ -333,12 +385,25 @@ def housing_results(request, participant):
             "count": count,
             "points": points,
             "has_your_points": any(point["is_yours"] for point in points),
-            "x_axis_label": housing_axis_label(config["x_axis"]),
-            "y_axis_label": housing_axis_label(config["y_axis"]),
+            "x_axis_label": housing_axis_label(question, config["x_axis"]),
+            "y_axis_label": housing_axis_label(question, config["y_axis"]),
             "x_axis_key": config["x_axis"],
             "y_axis_key": config["y_axis"],
         },
     )
+
+
+def _researcher_password_matches(submitted):
+    """Verify the submitted password against either a hash or a plaintext setting.
+
+    Prefers ``RESEARCH_ADMIN_PASSWORD_HASH`` when set (recommended for prod).
+    Falls back to comparing against the plaintext ``RESEARCH_ADMIN_PASSWORD``
+    for local development.
+    """
+    hashed = getattr(settings, "RESEARCH_ADMIN_PASSWORD_HASH", "")
+    if hashed:
+        return check_password(submitted, hashed)
+    return constant_time_compare(submitted, settings.RESEARCH_ADMIN_PASSWORD)
 
 
 @require_http_methods(["GET", "POST"])
@@ -346,15 +411,25 @@ def research_login(request):
     next_url = request.GET.get("next") or reverse("research-dashboard")
     if request.method == "POST":
         form = ResearchLoginForm(request.POST)
-        if form.is_valid() and constant_time_compare(
-            form.cleaned_data["password"],
-            settings.RESEARCH_ADMIN_PASSWORD,
-        ):
+        if form.is_valid() and _researcher_password_matches(form.cleaned_data["password"]):
+            request.session.cycle_key()
             request.session["researcher_admin"] = True
+            request.session["researcher_actor"] = f"researcher-session:{secrets.token_urlsafe(8)}"
+            logger.info(
+                "researcher login succeeded",
+                extra={
+                    "event": "researcher.login.success",
+                    "actor": researcher_actor(request),
+                },
+            )
             redirect_to = request.POST.get("next") or reverse("research-dashboard")
             if not url_has_allowed_host_and_scheme(redirect_to, allowed_hosts={request.get_host()}):
                 redirect_to = reverse("research-dashboard")
             return redirect(redirect_to)
+        logger.warning(
+            "researcher login failed",
+            extra={"event": "researcher.login.failed", "actor": request.META.get("REMOTE_ADDR", "")},
+        )
         messages.error(request, "The password was not accepted.")
     else:
         form = ResearchLoginForm()
@@ -368,6 +443,7 @@ def research_login(request):
 
 def research_logout(request):
     request.session.pop("researcher_admin", None)
+    request.session.pop("researcher_actor", None)
     return redirect("research-login")
 
 
@@ -467,8 +543,8 @@ def research_housing_plots(request):
             "count": count,
             "points": points,
             "has_your_points": False,
-            "x_axis_label": housing_axis_label(config["x_axis"]),
-            "y_axis_label": housing_axis_label(config["y_axis"]),
+            "x_axis_label": housing_axis_label(question, config["x_axis"]),
+            "y_axis_label": housing_axis_label(question, config["y_axis"]),
             "x_axis_key": config["x_axis"],
             "y_axis_key": config["y_axis"],
             "is_research_view": True,
@@ -485,11 +561,21 @@ def edit_relationship(request):
         if not form.has_meaningful_changes():
             messages.info(request, "No changes to save.")
             return redirect("research-edit-relationship")
-        update_relationship_settings(
+        new_question = update_relationship_settings(
             question_text=form.cleaned_data["question_text"],
             likert_points=int(form.cleaned_data["likert_points"]),
             likert_labels=form.labels_for_selected_scale(),
             relationship_choices=form.relationship_choices_for_save(),
+        )
+        logger.info(
+            "relationship survey updated",
+            extra={
+                "event": "researcher.schema.relationship.updated",
+                "activity": RELATIONSHIP_SLUG,
+                "actor": researcher_actor(request),
+                "from_version": question.version,
+                "to_version": new_question.version,
+            },
         )
         messages.success(request, "Relationship survey updated.")
         return redirect("research-edit-relationship")
@@ -510,23 +596,66 @@ def edit_relationship(request):
 def edit_housing(request):
     question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
     form = HousingEditForm(request.POST or None, question=question)
-    if request.method == "POST" and form.is_valid():
-        if not form.has_meaningful_changes():
+    if request.method == "POST":
+        field_formset = HousingFieldFormSetFactory(request.POST, prefix="fields")
+    else:
+        field_formset = HousingFieldFormSetFactory(
+            initial=form.initial_field_rows(),
+            prefix="fields",
+        )
+
+    if request.method == "POST" and form.is_valid() and field_formset.is_valid():
+        new_fields = form.serialize_fields(field_formset)
+        if not new_fields:
+            messages.error(request, "Add at least one housing field.")
+        elif not form.has_meaningful_changes(new_fields):
             messages.info(request, "No changes to save.")
             return redirect("research-edit-housing")
-        update_housing_settings(
-            question_text=form.cleaned_data["question_text"],
-            x_axis=form.cleaned_data["x_axis"],
-            y_axis=form.cleaned_data["y_axis"],
-        )
-        messages.success(request, "Housing activity updated.")
-        return redirect("research-edit-housing")
+        elif form.schema_has_meaningful_changes(new_fields):
+            new_question = update_housing_schema(
+                question_text=form.cleaned_data["question_text"],
+                fields=new_fields,
+                viz={
+                    "x_axis": form.cleaned_data["x_axis"],
+                    "y_axis": form.cleaned_data["y_axis"],
+                },
+            )
+            logger.info(
+                "housing schema updated",
+                extra={
+                    "event": "researcher.schema.housing.updated",
+                    "activity": HOUSING_SLUG,
+                    "actor": researcher_actor(request),
+                    "from_version": question.version,
+                    "to_version": new_question.version,
+                },
+            )
+            messages.success(request, "Housing activity updated.")
+            return redirect("research-edit-housing")
+        else:
+            updated_question = update_housing_visualization(
+                x_axis=form.cleaned_data["x_axis"],
+                y_axis=form.cleaned_data["y_axis"],
+            )
+            logger.info(
+                "housing scatter plot settings updated",
+                extra={
+                    "event": "researcher.housing.visualization.updated",
+                    "activity": HOUSING_SLUG,
+                    "actor": researcher_actor(request),
+                    "from_version": question.version,
+                    "to_version": updated_question.version,
+                },
+            )
+            messages.success(request, "Housing scatter plot updated.")
+            return redirect("research-edit-housing")
 
     return render(
         request,
         "research/edit_housing.html",
         {
             "form": form,
+            "field_formset": field_formset,
             "question": question,
         },
     )
@@ -554,11 +683,11 @@ def research_export_csv(request):
         qs = qs.filter(created_at__date__lte=date_end)
 
     if activity:
-        payload_columns = list(ACTIVITY_PAYLOAD_COLUMNS.get(activity, []))
+        payload_columns = activity_payload_columns(activity)
     else:
         payload_columns = []
-        for slug in ACTIVITY_PAYLOAD_COLUMNS:
-            for column in ACTIVITY_PAYLOAD_COLUMNS[slug]:
+        for slug in (RELATIONSHIP_SLUG, HOUSING_SLUG):
+            for column in activity_payload_columns(slug):
                 if column not in payload_columns:
                     payload_columns.append(column)
 
@@ -588,5 +717,14 @@ def research_export_csv(request):
         date_start=date_start,
         date_end=date_end,
         row_count=row_count,
+    )
+    logger.info(
+        "csv export generated",
+        extra={
+            "event": "researcher.export.csv",
+            "activity": activity or "all",
+            "actor": researcher_actor(request),
+            "row_count": row_count,
+        },
     )
     return response

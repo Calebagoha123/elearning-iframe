@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("healthz", views.healthz, name="healthz"),
     path("", views.iframe_entry, name="iframe-entry"),
     path("iframe/", views.iframe_entry, name="iframe-entry"),
     path("iframe/<slug:activity_slug>/", views.activity_iframe_entry, name="activity-iframe-entry"),
@@ -10,6 +11,7 @@ urlpatterns = [
     path("activities/relationship/", views.relationship_activity, name="relationship-activity"),
     path("activities/relationship/results/", views.relationship_results, name="relationship-results"),
     path("activities/housing/", views.housing_activity, name="housing-activity"),
+    path("activities/housing/entries/<int:response_id>/delete/", views.housing_delete_entry, name="housing-delete-entry"),
     path("activities/housing/results/", views.housing_results, name="housing-results"),
     path("research/login/", views.research_login, name="research-login"),
     path("research/logout/", views.research_logout, name="research-logout"),

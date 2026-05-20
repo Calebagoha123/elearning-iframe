@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run Django tests
+        env:
+          DJANGO_DEBUG: "1"
+          DJANGO_SECRET_KEY: "ci-secret"
+          IFRAME_SIGNING_SECRET: "ci-secret"
+          RESEARCH_ADMIN_PASSWORD: "ci-pass"
+          NOMINATIM_VERIFY: "0"
+        run: uv run python manage.py test course_iframe --verbosity=2
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit pyproject deps
+        run: pip-audit --strict --requirement requirements.txt

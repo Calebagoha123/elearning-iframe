@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load housing_tags %}
 
 {% block title %}Housing data entry{% endblock %}
 
@@ -12,16 +13,36 @@
 </header>
 
 <section class="split-layout">
-  <form method="post" class="panel form-stack">
+  <form method="post" class="panel form-stack housing-entry-form" novalidate>
     {% csrf_token %}
     <fieldset>
       <legend>{{ question.question_text }}</legend>
-      {% for field in form %}
-        <label>
-          <span>{{ field.label }}</span>
-          {{ field }}
-        </label>
-        {% if field.errors %}<p class="error">{{ field.errors|striptags }}</p>{% endif %}
+      {% for row in form.field_rows %}
+        <div class="field-row field-row--{{ row.spec.type }}">
+          <label for="{{ row.field.id_for_label }}">
+            <span>
+              {{ row.field.label }}{% if row.spec.required %} <em class="required-mark" aria-hidden="true">*</em>{% endif %}
+            </span>
+            {% if row.spec.type == "currency_eur" %}
+              <span class="currency-input">
+                <span class="currency-input__symbol" aria-hidden="true">€</span>
+                {{ row.field }}
+              </span>
+            {% elif row.spec.type == "place" %}
+              <span class="place-input" data-place-wrapper="{{ row.spec.key }}">
+                {{ row.field }}
+                {{ row.osm_type_field }}
+                {{ row.osm_id_field }}
+                {{ row.display_field }}
+                <ul class="place-suggestions" data-place-suggestions="{{ row.spec.key }}" role="listbox" hidden></ul>
+              </span>
+            {% else %}
+              {{ row.field }}
+            {% endif %}
+          </label>
+          {% if row.field.help_text %}<small>{{ row.field.help_text }}</small>{% endif %}
+          {% if row.field.errors %}<p class="error">{{ row.field.errors|striptags }}</p>{% endif %}
+        </div>
       {% endfor %}
     </fieldset>
     <div class="form-actions">
@@ -37,9 +58,23 @@
     </div>
     <div class="entry-list">
       {% for entry in entries %}
-        <div class="entry-row">
-          <strong>{{ entry.payload.district }}</strong>
-          <span>&pound;{{ entry.payload.monthly_rent }} &middot; {{ entry.payload.rooms }} rooms</span>
+        <div class="entry-row entry-row--with-action">
+          <div class="entry-row__body">
+            {% for spec in summary_fields %}
+              {% if forloop.first %}
+                <strong>{{ entry.payload|dict_get:spec.key|default:"—" }}</strong>
+              {% else %}
+                <span>
+                  {% if spec.type == "currency_eur" %}&euro;{% endif %}{{ entry.payload|dict_get:spec.key|default:"—" }}
+                  {% if spec.label %} · {{ spec.label|lower }}{% endif %}
+                </span>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <form method="post" action="{% url 'housing-delete-entry' entry.id %}" class="entry-row__action">
+            {% csrf_token %}
+            <button type="submit" class="icon-button entry-row__delete" aria-label="Remove this entry" title="Remove">&times;</button>
+          </form>
         </div>
       {% empty %}
         <p class="muted">No housing entries saved yet.</p>
@@ -47,4 +82,82 @@
     </div>
   </aside>
 </section>
+
+<script>
+(() => {
+  const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
+  const wrappers = document.querySelectorAll("[data-place-wrapper]");
+  if (!wrappers.length) return;
+
+  const debounce = (fn, ms) => {
+    let handle;
+    return (...args) => {
+      window.clearTimeout(handle);
+      handle = window.setTimeout(() => fn(...args), ms);
+    };
+  };
+
+  wrappers.forEach(wrapper => {
+    const input = wrapper.querySelector("[data-place-input]");
+    const osmTypeInput = wrapper.querySelector("[data-place-osm-type]");
+    const osmIdInput = wrapper.querySelector("[data-place-osm-id]");
+    const displayInput = wrapper.querySelector("[data-place-display]");
+    const list = wrapper.querySelector("[data-place-suggestions]");
+    if (!input || !list) return;
+
+    const closeList = () => { list.hidden = true; list.innerHTML = ""; };
+    const clearSelection = () => {
+      osmTypeInput.value = "";
+      osmIdInput.value = "";
+      displayInput.value = "";
+    };
+
+    const renderResults = results => {
+      list.innerHTML = "";
+      if (!results.length) {
+        closeList();
+        return;
+      }
+      results.forEach(result => {
+        const item = document.createElement("li");
+        item.className = "place-suggestion";
+        item.setAttribute("role", "option");
+        item.textContent = result.display_name;
+        item.addEventListener("mousedown", event => {
+          event.preventDefault();
+          input.value = result.display_name;
+          osmTypeInput.value = result.osm_type;
+          osmIdInput.value = result.osm_id;
+          displayInput.value = result.display_name;
+          closeList();
+        });
+        list.appendChild(item);
+      });
+      list.hidden = false;
+    };
+
+    const search = debounce(async query => {
+      if (query.length < 3) { closeList(); return; }
+      try {
+        const url = `${NOMINATIM_BASE}/search?format=json&addressdetails=1&limit=6&q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, { headers: { "Accept-Language": navigator.language || "en" } });
+        if (!res.ok) { closeList(); return; }
+        const data = await res.json();
+        renderResults(Array.isArray(data) ? data : []);
+      } catch (_err) {
+        closeList();
+      }
+    }, 320);
+
+    input.addEventListener("input", () => {
+      clearSelection();
+      search(input.value.trim());
+    });
+    input.addEventListener("blur", () => window.setTimeout(closeList, 120));
+    input.addEventListener("focus", () => {
+      if (input.value.trim().length >= 3) search(input.value.trim());
+    });
+  });
+})();
+</script>
 {% endblock %}

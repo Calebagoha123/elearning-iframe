@@ -826,6 +826,30 @@ input[type="radio"]:checked {
 
 .entry-row:first-child { border-top: 0; padding-top: 4px; }
 
+.entry-row--with-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.entry-row__body { display: grid; gap: 4px; }
+
+.entry-row__action { margin: 0; }
+
+.entry-row__delete {
+  width: 32px;
+  height: 32px;
+  font-size: 1.1rem;
+  color: var(--danger);
+  border-color: rgba(180, 35, 24, 0.35);
+}
+
+.entry-row__delete:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fdfbf4;
+}
+
 .entry-row strong {
   font-family: "Barlow Condensed", Bahnschrift, sans-serif;
   font-size: 1.05rem;
@@ -1237,6 +1261,137 @@ input[type="radio"]:checked {
   fill-opacity: 1;
   stroke: var(--plum-ink);
   stroke-width: 1.5;
+}
+
+/* ─── housing entry: currency, place autocomplete ─────────── */
+
+.field-row { display: grid; gap: 6px; }
+
+.required-mark {
+  color: var(--warm);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.currency-input {
+  position: relative;
+  display: block;
+}
+
+.currency-input__symbol {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--plum-deep);
+  font-family: "Barlow Condensed", Bahnschrift, sans-serif;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.currency-input input { padding-left: 32px; }
+
+.place-input {
+  position: relative;
+  display: block;
+}
+
+.place-suggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  box-shadow: var(--shadow-lift);
+  overflow-y: auto;
+}
+
+.place-suggestions[hidden] { display: none; }
+
+.place-suggestion {
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  color: var(--ink);
+  cursor: pointer;
+  border-top: 1px solid var(--line);
+}
+
+.place-suggestion:first-child { border-top: 0; }
+.place-suggestion:hover { background: var(--surface-soft); color: var(--plum-deep); }
+
+/* ─── researcher schema editor ────────────────────────────── */
+
+.housing-fields-fieldset { gap: 14px; }
+
+.housing-fields-list {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.housing-field-row {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--plum);
+  border-radius: 3px;
+}
+
+.housing-field-row__head {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.housing-field-row__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.housing-field-row__required {
+  align-self: end;
+}
+
+.housing-field-row__required input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  margin: 0;
+  accent-color: var(--plum);
+}
+
+.housing-field-row__help,
+.housing-field-row__options {
+  grid-column: 1 / -1;
+}
+
+.housing-field-row__delete {
+  color: var(--danger);
+  border-color: rgba(180, 35, 24, 0.4);
+}
+
+.housing-field-row__delete:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fdfbf4;
+}
+
+@media (max-width: 760px) {
+  .housing-field-row__grid { grid-template-columns: 1fr; }
 }
 
 /* ─── researcher edit page ────────────────────────────────── */
