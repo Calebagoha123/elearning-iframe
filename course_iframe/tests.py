@@ -15,11 +15,16 @@ from .services import (
     RELATIONSHIP_SLUG,
     active_question,
     get_or_create_participant,
+    housing_raw_payloads,
+    housing_scatter_config,
     housing_scatter_points,
     make_iframe_signature,
     save_housing_response,
     save_relationship_response,
     relationship_color_map,
+    relationship_display_mode,
+    relationship_participant_stacks,
+    relationship_segmented_bars,
 )
 
 
@@ -401,6 +406,91 @@ class IframeMvpTests(TestCase):
         self.assertContains(response, "No responses yet.")
         self.assertNotContains(response, "Friend")
 
+    def test_relationship_display_mode_defaults_to_cohort(self):
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.assertEqual(relationship_display_mode(question), "cohort")
+
+    def test_research_relationship_plot_page_updates_display_mode(self):
+        self.add_relationship_responses(2)
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        response = self.client.post(
+            reverse("research-relationship-plots"),
+            {"display_mode": "both"},
+            follow=True,
+        )
+
+        active = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.assertEqual(relationship_display_mode(active), "both")
+        self.assertContains(response, "Relationship chart updated.")
+
+    def test_research_relationship_plot_page_rejects_unknown_mode(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        self.client.post(reverse("research-relationship-plots"), {"display_mode": "garbage"})
+
+        active = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.assertEqual(relationship_display_mode(active), "cohort")
+
+    def test_segmented_bars_side_by_side_includes_yours_and_cohort(self):
+        # Two participants give responses; ask for "both" mode as participant A.
+        self.enter_iframe(participant_id="student-a")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "friend"}]))
+        participant_a = Participant.objects.get(participant_id="student-a")
+
+        self.enter_iframe(participant_id="student-b")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "parent"}]))
+
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        bars = relationship_segmented_bars(question, participant=participant_a, mode="both")
+
+        # Every column gets both stacks defined (even if empty for some columns).
+        self.assertTrue(all("yours" in col and "cohort" in col for col in bars["columns"]))
+        yours_total = sum(col["yours"]["total"] for col in bars["columns"])
+        cohort_total = sum(col["cohort"]["total"] for col in bars["columns"])
+        # Cohort includes everyone (participant A counts too).
+        self.assertEqual(yours_total, 1)
+        self.assertEqual(cohort_total, 2)
+        self.assertEqual(bars["mode"], "both")
+
+    def test_segmented_bars_yours_only_excludes_cohort(self):
+        self.enter_iframe(participant_id="student-a")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "friend"}]))
+        participant_a = Participant.objects.get(participant_id="student-a")
+
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        bars = relationship_segmented_bars(question, participant=participant_a, mode="yours")
+
+        cohort_total = sum(col["cohort"]["total"] for col in bars["columns"])
+        self.assertEqual(cohort_total, 0)
+        yours_total = sum(col["yours"]["total"] for col in bars["columns"])
+        self.assertEqual(yours_total, 1)
+
+    def test_relationship_participant_stacks_are_keyed_per_respondent(self):
+        self.enter_iframe(participant_id="student-a")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "friend"}]))
+        self.enter_iframe(participant_id="student-b")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "parent"}]))
+
+        question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        stacks = relationship_participant_stacks(question)
+
+        self.assertEqual(sorted(stacks.keys()), ["student-a", "student-b"])
+        a_labels = {seg["label"] for stack in stacks["student-a"].values() for seg in stack["segments"]}
+        self.assertEqual(a_labels, {"Friend"})
+        a_total = sum(stack["total"] for stack in stacks["student-a"].values())
+        self.assertEqual(a_total, 1)
+
+    def test_research_relationship_plot_page_lists_respondents_for_overlay(self):
+        self.enter_iframe(participant_id="student-a")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "friend"}]))
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        response = self.client.get(reverse("research-relationship-plots"))
+        self.assertContains(response, "Preview a respondent")
+        self.assertContains(response, "relationship-participant-stacks")
+        self.assertContains(response, "student-a")
+
     def housing_form_payload(self, district="North Berlin", rent="1200.00", rooms="2", size=""):
         return {
             "district": district,
@@ -504,17 +594,19 @@ class IframeMvpTests(TestCase):
 
         self.assertContains(response, 'data-save-changes disabled')
 
-    def test_research_edit_housing_axes_only_updates_current_question(self):
+    def test_research_plot_page_updates_axes_in_place(self):
         self.client.post(reverse("research-login"), {"password": "research-pass"})
         question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
 
         response = self.client.post(
-            reverse("research-edit-housing"),
+            reverse("research-housing-plots"),
             {
-                "question_text": question.question_text,
-                "x_axis": "monthly_rent",
-                "y_axis": "rooms",
-                **self.schema_formset_payload(self.default_housing_schema_payload()),
+                "x_axis_mode": "single",
+                "x_axis_numerator": "monthly_rent",
+                "x_axis_denominator": "",
+                "y_axis_mode": "single",
+                "y_axis_numerator": "rooms",
+                "y_axis_denominator": "",
             },
             follow=True,
         )
@@ -524,8 +616,59 @@ class IframeMvpTests(TestCase):
         self.assertEqual(active.pk, question.pk)
         self.assertEqual(active.version, question.version)
         self.assertTrue(active.is_active)
-        self.assertEqual(active.options_json["viz"], {"x_axis": "monthly_rent", "y_axis": "rooms"})
-        self.assertContains(response, "Housing scatter plot updated.")
+        self.assertEqual(
+            active.options_json["viz"],
+            {
+                "x_axis": {"numerator": "monthly_rent", "denominator": "", "label": ""},
+                "y_axis": {"numerator": "rooms", "denominator": "", "label": ""},
+            },
+        )
+        self.assertContains(response, "Scatter plot axes updated.")
+
+    def test_research_plot_page_supports_ratio_axes_with_custom_label(self):
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        self.client.post(
+            reverse("research-housing-plots"),
+            {
+                "x_axis_mode": "ratio",
+                "x_axis_numerator": "monthly_rent",
+                "x_axis_denominator": "size_sqm",
+                "x_axis_label": "Rent per m²",
+                "y_axis_mode": "single",
+                "y_axis_numerator": "rooms",
+                "y_axis_denominator": "",
+                "y_axis_label": "ignored when single",
+            },
+        )
+
+        active = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        self.assertEqual(
+            active.options_json["viz"]["x_axis"],
+            {"numerator": "monthly_rent", "denominator": "size_sqm", "label": "Rent per m²"},
+        )
+        # Single-axis labels are dropped, since custom labels only apply to ratios.
+        self.assertEqual(active.options_json["viz"]["y_axis"]["label"], "")
+
+        from .services import housing_axis_label
+        self.assertEqual(housing_axis_label(active, active.options_json["viz"]["x_axis"]), "Rent per m²")
+
+    def test_legacy_rent_per_sqm_axis_string_still_renders(self):
+        question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+        options = dict(question.options_json or {})
+        options["viz"] = {"x_axis": "rent_per_sqm", "y_axis": "rooms"}
+        Question.objects.filter(pk=question.pk).update(options_json=options)
+        question.refresh_from_db()
+
+        config = housing_scatter_config(question)
+        self.assertEqual(
+            config["x_axis"],
+            {"numerator": "monthly_rent", "denominator": "size_sqm", "label": ""},
+        )
+        self.assertEqual(
+            config["y_axis"],
+            {"numerator": "rooms", "denominator": "", "label": ""},
+        )
 
     def test_research_dashboard_and_csv_require_login(self):
         dashboard = self.client.get(reverse("research-dashboard"))
@@ -563,6 +706,61 @@ class IframeMvpTests(TestCase):
         self.assertContains(relationship, "Friend")
         self.assertContains(housing, "Housing comparison")
         self.assertContains(housing, "data-scatter-toggle")
+
+    def test_housing_raw_payloads_hide_identity_unless_requested(self):
+        self.add_housing_responses(2)
+        question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+
+        anonymous = housing_raw_payloads(question, None)
+        self.assertTrue(all("participant_id" not in row for row in anonymous))
+
+        identified = housing_raw_payloads(question, None, include_identity=True)
+        self.assertEqual(
+            sorted(row["participant_id"] for row in identified),
+            ["student-0", "student-1"],
+        )
+
+    def test_research_housing_plot_page_lists_respondents_for_highlight(self):
+        self.add_housing_responses(2)  # creates student-0 and student-1
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        response = self.client.get(reverse("research-housing-plots"))
+        self.assertContains(response, "Highlight a respondent")
+        self.assertContains(response, '"participant_id"')  # identity present in the payload JSON
+        self.assertContains(response, "student-1")
+
+    def test_student_housing_results_do_not_leak_other_pseudonames(self):
+        self.add_housing_responses(2)  # creates student-0 and student-1
+        self.enter_iframe(participant_id="student-0")
+
+        response = self.client.get(reverse("housing-results"))
+        self.assertNotContains(response, '"participant_id"')  # no identity key in the payload JSON
+        self.assertNotContains(response, "student-1")
+
+    def test_student_summary_combines_both_visualizations(self):
+        self.enter_iframe(participant_id="student-1")
+        self.client.post(reverse("relationship-activity"), self.relationship_formset_payload([{"relationship": "friend"}]))
+        self.client.post(reverse("housing-activity"), self.housing_form_payload())
+
+        response = self.client.get(reverse("student-summary"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Your results")
+        self.assertContains(response, "data-segmented-chart-host")  # relationship stacked bar
+        self.assertContains(response, "data-scatter-plot")  # housing scatter
+        # The summary is a student page: no research controls, no leaked identities.
+        self.assertNotContains(response, "What students see")  # display-mode picker label
+        self.assertNotContains(response, "Highlight a respondent")  # housing focus-picker label
+        self.assertNotContains(response, '"participant_id"')
+
+    def test_student_summary_requires_a_session(self):
+        response = self.client.get(reverse("student-summary"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_summary_iframe_entry_lands_on_summary(self):
+        response = self.enter_activity_iframe("summary", pseudoname="moodle-pseudo-7")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Your results")
+        self.assertContains(response, "data-scatter-plot")
 
     def test_seed_demo_responses_populates_visualization_data(self):
         call_command(

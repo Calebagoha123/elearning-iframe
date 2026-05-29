@@ -42,19 +42,20 @@ LIKERT_CHOICES = {
     ],
 }
 
+# Colorblind-safe qualitative palette (Okabe-Ito + one Tol wine to reach 9 hues).
+# Each pair is distinguishable under deuteranopia, protanopia, and tritanopia.
+# Yellow sits last since it has weakest contrast on light surfaces and under the
+# diagonal stripe overlay used on the "yours" stack.
 RELATIONSHIP_PALETTE = [
-    "#0072b2",
-    "#e69f00",
-    "#009e73",
-    "#cc79a7",
-    "#56b4e9",
-    "#d55e00",
-    "#882255",
-    "#332288",
-    "#117733",
-    "#aa4499",
-    "#44aa99",
-    "#999933",
+    "#0072b2",  # blue
+    "#e69f00",  # orange
+    "#009e73",  # bluish green
+    "#cc79a7",  # reddish purple
+    "#56b4e9",  # sky blue
+    "#d55e00",  # vermillion
+    "#000000",  # black
+    "#882255",  # wine (Tol qualitative)
+    "#f0e442",  # yellow
 ]
 RELATIONSHIP_OTHER_COLOR = "#7a7a7a"
 
@@ -302,60 +303,93 @@ def housing_numeric_fields(question):
 
 
 def housing_axis_choices(question):
-    numeric = housing_numeric_fields(question)
-    choices = [(field["key"], field["label"]) for field in numeric]
-    numeric_keys = {field["key"] for field in numeric}
-    if {"monthly_rent", "size_sqm"}.issubset(numeric_keys):
-        choices.append((RENT_PER_SQM_KEY, "Rent per square metre"))
-    return choices
+    """Numeric fields available as axis components (numerator or denominator)."""
+    return [(field["key"], field["label"]) for field in housing_numeric_fields(question)]
 
 
-def housing_axis_label(question, axis_key):
-    return dict(housing_axis_choices(question)).get(axis_key, axis_key)
+def _normalize_axis_spec(raw, numeric_keys):
+    """Coerce a stored axis (dict, plain string, or legacy 'rent_per_sqm') into a normalized dict.
+
+    Returns ``{"numerator": str, "denominator": str, "label": str}`` with field keys
+    validated against ``numeric_keys``. Empty strings mean "not set" (no axis), "no
+    denominator" (plain field), or "fall back to derived label".
+    """
+    label = ""
+    if isinstance(raw, dict):
+        numerator = (raw.get("numerator") or "").strip()
+        denominator = (raw.get("denominator") or "").strip()
+        label = (raw.get("label") or "").strip()
+    elif raw == RENT_PER_SQM_KEY:
+        numerator, denominator = "monthly_rent", "size_sqm"
+    elif isinstance(raw, str):
+        numerator, denominator = raw, ""
+    else:
+        numerator, denominator = "", ""
+    if numerator not in numeric_keys:
+        numerator = ""
+    if denominator and (denominator not in numeric_keys or denominator == numerator):
+        denominator = ""
+    if not denominator:
+        label = ""  # custom labels only apply to ratios
+    return {"numerator": numerator, "denominator": denominator, "label": label}
+
+
+def housing_axis_label(question, axis_spec):
+    labels = {field["key"]: field["label"] for field in housing_numeric_fields(question)}
+    if not isinstance(axis_spec, dict):
+        axis_spec = _normalize_axis_spec(axis_spec, set(labels))
+    if axis_spec.get("label"):
+        return axis_spec["label"]
+    numerator = axis_spec.get("numerator") or ""
+    denominator = axis_spec.get("denominator") or ""
+    num_label = labels.get(numerator, numerator)
+    if denominator:
+        den_label = labels.get(denominator, denominator)
+        return f"{num_label} ÷ {den_label}"
+    return num_label
 
 
 def housing_scatter_config(question):
     viz = (question.options_json or {}).get("viz") or {}
-    ordered_axes = [key for key, _ in housing_axis_choices(question)]
-    valid_axes = set(ordered_axes)
+    numeric_keys = {field["key"] for field in housing_numeric_fields(question)}
+    ordered_keys = [field["key"] for field in housing_numeric_fields(question)]
 
-    def pick(preferred, fallback_pool):
-        if preferred in valid_axes:
+    x = _normalize_axis_spec(viz.get("x_axis"), numeric_keys)
+    y = _normalize_axis_spec(viz.get("y_axis"), numeric_keys)
+
+    def pick_default(preferred, pool):
+        if preferred in pool:
             return preferred
-        for candidate in fallback_pool:
-            if candidate in valid_axes:
-                return candidate
-        return ordered_axes[0] if ordered_axes else preferred
+        return pool[0] if pool else ""
 
-    x_axis = viz.get("x_axis")
-    if x_axis not in valid_axes:
-        x_axis = pick(DEFAULT_HOUSING_X_AXIS, ordered_axes)
-    y_axis = viz.get("y_axis")
-    if y_axis not in valid_axes or y_axis == x_axis:
-        remaining = [key for key in ordered_axes if key != x_axis]
-        y_axis = pick(DEFAULT_HOUSING_Y_AXIS, remaining) if DEFAULT_HOUSING_Y_AXIS != x_axis else (remaining[0] if remaining else DEFAULT_HOUSING_Y_AXIS)
-    return {"x_axis": x_axis, "y_axis": y_axis}
+    if not x["numerator"]:
+        x = {"numerator": pick_default(DEFAULT_HOUSING_X_AXIS, ordered_keys), "denominator": "", "label": ""}
+    if not y["numerator"] or y == x:
+        remaining = [k for k in ordered_keys if k != x["numerator"]]
+        y = {"numerator": pick_default(DEFAULT_HOUSING_Y_AXIS, remaining), "denominator": "", "label": ""}
+    return {"x_axis": x, "y_axis": y}
 
 
 def update_housing_visualization(x_axis, y_axis):
+    """Persist axis specs. ``x_axis`` and ``y_axis`` are dicts with numerator/denominator."""
     question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
     options = dict(question.options_json or {})
-    ordered_axes = [key for key, _ in housing_axis_choices(question)]
-    valid_axes = set(ordered_axes)
-    if not ordered_axes:
+    numeric_keys = {field["key"] for field in housing_numeric_fields(question)}
+    ordered_keys = [field["key"] for field in housing_numeric_fields(question)]
+    if not ordered_keys:
         return question
-    if x_axis not in valid_axes:
-        x_axis = DEFAULT_HOUSING_X_AXIS if DEFAULT_HOUSING_X_AXIS in valid_axes else ordered_axes[0]
-    if y_axis not in valid_axes or y_axis == x_axis:
-        remaining = [key for key in ordered_axes if key != x_axis]
-        if DEFAULT_HOUSING_Y_AXIS in remaining:
-            y_axis = DEFAULT_HOUSING_Y_AXIS
-        else:
-            y_axis = remaining[0] if remaining else x_axis
-    options["viz"] = {
-        "x_axis": x_axis,
-        "y_axis": y_axis,
-    }
+
+    x = _normalize_axis_spec(x_axis, numeric_keys)
+    y = _normalize_axis_spec(y_axis, numeric_keys)
+
+    if not x["numerator"]:
+        x = {"numerator": DEFAULT_HOUSING_X_AXIS if DEFAULT_HOUSING_X_AXIS in numeric_keys else ordered_keys[0], "denominator": "", "label": ""}
+    if not y["numerator"] or y == x:
+        remaining = [k for k in ordered_keys if k != x["numerator"]]
+        fallback = DEFAULT_HOUSING_Y_AXIS if DEFAULT_HOUSING_Y_AXIS in remaining else (remaining[0] if remaining else x["numerator"])
+        y = {"numerator": fallback, "denominator": "", "label": ""}
+
+    options["viz"] = {"x_axis": x, "y_axis": y}
     Question.objects.filter(pk=question.pk).update(options_json=options)
     question.options_json = options
     return question
@@ -366,16 +400,10 @@ def update_housing_schema(question_text, fields, viz=None):
     options = dict(question.options_json or {})
     options["fields"] = list(fields)
     if viz:
-        candidate_axes = {field["key"] for field in fields if field["type"] in HOUSING_NUMERIC_FIELD_TYPES}
-        numeric_keys = candidate_axes
-        if {"monthly_rent", "size_sqm"}.issubset(numeric_keys):
-            candidate_axes = candidate_axes | {RENT_PER_SQM_KEY}
-        x_axis = viz.get("x_axis") if viz.get("x_axis") in candidate_axes else next(iter(candidate_axes), DEFAULT_HOUSING_X_AXIS)
-        y_axis = viz.get("y_axis") if viz.get("y_axis") in candidate_axes and viz.get("y_axis") != x_axis else None
-        if y_axis is None:
-            remaining = [key for key in candidate_axes if key != x_axis]
-            y_axis = remaining[0] if remaining else DEFAULT_HOUSING_Y_AXIS
-        options["viz"] = {"x_axis": x_axis, "y_axis": y_axis}
+        numeric_keys = {field["key"] for field in fields if field["type"] in HOUSING_NUMERIC_FIELD_TYPES}
+        x = _normalize_axis_spec(viz.get("x_axis"), numeric_keys)
+        y = _normalize_axis_spec(viz.get("y_axis"), numeric_keys)
+        options["viz"] = {"x_axis": x, "y_axis": y}
     return create_question_version(question, question_text, options)
 
 
@@ -518,14 +546,28 @@ def _payload_decimal(payload, key):
     return value
 
 
-def _housing_value(payload, axis_key):
-    if axis_key == RENT_PER_SQM_KEY:
-        rent = _payload_decimal(payload, "monthly_rent")
-        size = _payload_decimal(payload, "size_sqm")
-        if rent is None or not size or size == 0:
-            return None
-        return rent / size
-    return _payload_decimal(payload, axis_key)
+def _housing_value(payload, axis_spec):
+    """Compute the numeric value for a point given an axis spec (dict) or legacy string key."""
+    if isinstance(axis_spec, dict):
+        numerator_key = axis_spec.get("numerator") or ""
+        denominator_key = axis_spec.get("denominator") or ""
+    elif axis_spec == RENT_PER_SQM_KEY:
+        numerator_key, denominator_key = "monthly_rent", "size_sqm"
+    elif isinstance(axis_spec, str):
+        numerator_key, denominator_key = axis_spec, ""
+    else:
+        return None
+    if not numerator_key:
+        return None
+    numerator = _payload_decimal(payload, numerator_key)
+    if numerator is None:
+        return None
+    if not denominator_key:
+        return numerator
+    denominator = _payload_decimal(payload, denominator_key)
+    if not denominator or denominator == 0:
+        return None
+    return numerator / denominator
 
 
 def _housing_label_for_point(question, payload):
@@ -535,6 +577,34 @@ def _housing_label_for_point(question, payload):
             return value.strip()
     fallback = payload.get("district")
     return fallback.strip() if isinstance(fallback, str) else ""
+
+
+def housing_raw_payloads(question, participant, include_identity=False):
+    """Per-response numeric values + meta needed for client-side scatter rendering.
+
+    ``include_identity`` attaches each response's ``participant_id`` (pseudoname) so the
+    research view can highlight a single respondent client-side. It is left off for the
+    student view to avoid leaking other students' pseudonames into the page.
+    """
+    numeric_keys = [field["key"] for field in housing_numeric_fields(question)]
+    responses = Response.objects.filter(question=question).select_related("participant")
+    rows = []
+    for response in responses:
+        payload = response.payload or {}
+        values = {}
+        for key in numeric_keys:
+            value = _payload_decimal(payload, key)
+            if value is not None:
+                values[key] = float(value)
+        row = {
+            "values": values,
+            "district": _housing_label_for_point(question, payload),
+            "is_yours": bool(participant and response.participant_id == participant.id),
+        }
+        if include_identity:
+            row["participant_id"] = response.participant.participant_id
+        rows.append(row)
+    return rows
 
 
 def housing_scatter_points(question, participant, x_axis, y_axis):
@@ -557,11 +627,32 @@ def housing_scatter_points(question, participant, x_axis, y_axis):
     return points
 
 
-def relationship_segmented_bars(question):
-    colors_by_value = relationship_color_map(question)
-    responses = Response.objects.filter(question=question)
-    rows = responses.values("payload").annotate(count=Count("id"))
+RELATIONSHIP_DISPLAY_MODES = ("both", "yours", "cohort")
+DEFAULT_RELATIONSHIP_DISPLAY_MODE = "cohort"
+
+
+def relationship_display_mode(question):
+    mode = ((question.options_json or {}).get("display") or {}).get("mode")
+    return mode if mode in RELATIONSHIP_DISPLAY_MODES else DEFAULT_RELATIONSHIP_DISPLAY_MODE
+
+
+def update_relationship_display_mode(mode):
+    if mode not in RELATIONSHIP_DISPLAY_MODES:
+        mode = DEFAULT_RELATIONSHIP_DISPLAY_MODE
+    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    options = dict(question.options_json or {})
+    display = dict(options.get("display") or {})
+    display["mode"] = mode
+    options["display"] = display
+    Question.objects.filter(pk=question.pk).update(options_json=options)
+    question.options_json = options
+    return question
+
+
+def _build_relationship_stack(responses_qs, question, colors_by_value):
+    """Aggregate responses_qs into per-Likert-column stacks of relationship-typed segments."""
     bucket = {key: {} for key, _ in relationship_likert_choices(question)}
+    rows = responses_qs.values("payload").annotate(count=Count("id"))
     for row in rows:
         payload = row["payload"] or {}
         income_value = (payload.get("income_comparison_value") or "").strip()
@@ -571,24 +662,19 @@ def relationship_segmented_bars(question):
             continue
         item = bucket[income_value].setdefault(
             label,
-            {
-                "count": 0,
-                "is_other": False,
-                "value": relationship_value,
-            },
+            {"count": 0, "is_other": False, "value": relationship_value},
         )
         item["count"] += row["count"]
         item["is_other"] = item["is_other"] or relationship_value == "other"
         if not item["value"]:
             item["value"] = relationship_value
 
-    columns = []
-    column_max = 0
-    for key, display_label in relationship_likert_choices(question):
-        segments_raw = bucket.get(key, {})
+    stacks = {}
+    for key, _ in relationship_likert_choices(question):
+        raw = bucket.get(key, {})
         segments = []
         total = 0
-        for label, item in sorted(segments_raw.items(), key=lambda item: (-item[1]["count"], item[0].lower())):
+        for label, item in sorted(raw.items(), key=lambda pair: (-pair[1]["count"], pair[0].lower())):
             segments.append(
                 {
                     "label": label,
@@ -602,26 +688,81 @@ def relationship_segmented_bars(question):
                 }
             )
             total += item["count"]
-        if total > column_max:
-            column_max = total
+        stacks[key] = {"segments": segments, "total": total}
+    return stacks
+
+
+def relationship_segmented_bars(question, participant=None, mode=None):
+    """Return per-Likert-column stacks for the configured display mode.
+
+    Each column has a ``yours`` and ``cohort`` stack. Stacks not in scope for the
+    current mode (or when no participant is supplied) are empty.
+    """
+    if mode is None:
+        mode = relationship_display_mode(question)
+    if mode not in RELATIONSHIP_DISPLAY_MODES:
+        mode = DEFAULT_RELATIONSHIP_DISPLAY_MODE
+
+    colors_by_value = relationship_color_map(question)
+    cohort_qs = Response.objects.filter(question=question)
+    cohort_stacks = _build_relationship_stack(cohort_qs, question, colors_by_value) if mode in ("cohort", "both") else {}
+
+    if participant and mode in ("yours", "both"):
+        yours_qs = Response.objects.filter(question=question, participant=participant)
+        yours_stacks = _build_relationship_stack(yours_qs, question, colors_by_value)
+    else:
+        yours_stacks = {}
+
+    empty_stack = {"segments": [], "total": 0}
+    columns = []
+    column_max = 0
+    for key, display_label in relationship_likert_choices(question):
+        cohort = cohort_stacks.get(key, empty_stack)
+        yours = yours_stacks.get(key, empty_stack)
+        column_max = max(column_max, cohort["total"], yours["total"])
         columns.append(
             {
                 "key": key,
                 "label": display_label,
-                "total": total,
-                "segments": segments,
+                "cohort": cohort,
+                "yours": yours,
             }
         )
 
     legend_seen = {}
     for column in columns:
-        for segment in column["segments"]:
-            legend_seen.setdefault(segment["label"], segment["color"])
+        for stack in (column["yours"], column["cohort"]):
+            for segment in stack["segments"]:
+                legend_seen.setdefault(segment["label"], segment["color"])
     legend = [
         {"label": label, "color": color}
-        for label, color in sorted(legend_seen.items(), key=lambda item: item[0].lower())
+        for label, color in sorted(legend_seen.items(), key=lambda pair: pair[0].lower())
     ]
-    return {"columns": columns, "column_max": column_max, "legend": legend}
+    return {"columns": columns, "column_max": column_max, "legend": legend, "mode": mode}
+
+
+def relationship_participant_stacks(question):
+    """Per-participant 'yours' stacks for the research preview overlay.
+
+    Returns ``{participant_id: {likert_key: {"segments": [...], "total": int}}}`` for
+    every participant who answered ``question``. The research plot view sends this to
+    the browser so a researcher can overlay any single respondent on the cohort chart.
+    Never sent to students — it identifies individuals.
+    """
+    colors_by_value = relationship_color_map(question)
+    participant_ids = (
+        Response.objects.filter(question=question)
+        .values_list("participant__participant_id", flat=True)
+        .distinct()
+    )
+    stacks = {}
+    for participant_id in sorted(set(participant_ids)):
+        qs = Response.objects.filter(
+            question=question,
+            participant__participant_id=participant_id,
+        )
+        stacks[participant_id] = _build_relationship_stack(qs, question, colors_by_value)
+    return stacks
 
 
 def participant_count_for_question(question):

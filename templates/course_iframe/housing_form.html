@@ -71,7 +71,7 @@
               {% endif %}
             {% endfor %}
           </div>
-          <form method="post" action="{% url 'housing-delete-entry' entry.id %}" class="entry-row__action">
+          <form method="post" action="{% url 'housing-delete-entry' entry.id %}" class="entry-row__action" onsubmit="return confirm('Remove this housing entry? This cannot be undone.');">
             {% csrf_token %}
             <button type="submit" class="icon-button entry-row__delete" aria-label="Remove this entry" title="Remove">&times;</button>
           </form>

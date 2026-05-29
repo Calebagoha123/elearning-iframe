@@ -5,11 +5,20 @@
 {% block content %}
 <header class="topbar">
   <div>
-    <p class="eyebrow">{{ count }} cohort participants</p>
+    {% if is_research_view %}
+      <p class="eyebrow">{{ count }} cohort participants</p>
+    {% else %}
+      <p class="eyebrow">Activity 1</p>
+    {% endif %}
     <h1>Relationship results</h1>
   </div>
   {% if is_research_view %}
     <a class="text-link" href="{% url 'research-dashboard' %}">&larr; Dashboard</a>
+  {% else %}
+    <div class="topbar-meta">
+      <p class="identity">ID {{ participant.participant_id }}</p>
+      <a class="button button-secondary" href="{% url 'relationship-activity' %}">&larr; Edit your responses</a>
+    </div>
   {% endif %}
 </header>
 
@@ -23,53 +32,6 @@
   </div>
 </section>
 
-<section class="panel chart-panel">
-  <div class="panel-heading">
-    <h2>Income comparison by relationship</h2>
-  </div>
-  {% if segmented_max %}
-    <div class="segmented-chart-frame">
-      <div class="segmented-y-axis" aria-hidden="true">
-        <span class="segmented-y-axis-title">Frequency</span>
-        <div class="segmented-y-ticks">
-          {% for tick in segmented_y_ticks %}
-            <span>{{ tick }}</span>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="segmented-bar-area">
-        <div class="segmented-bar-chart">
-          {% for column in segmented_columns %}
-            <div class="segmented-bar-column">
-              <div class="segmented-bar-stack" aria-label="{{ column.label }}: {{ column.total }} responses">
-                {% for segment in column.segments %}
-                  {% widthratio segment.count segmented_axis_max 100 as segment_pct %}
-                  <span
-                    class="segmented-bar-segment"
-                    style="height: {{ segment_pct }}%; background: {{ segment.color }};"
-                    title="{{ segment.label }} · {{ segment.count }}"
-                  ></span>
-                {% endfor %}
-              </div>
-              <span class="segmented-bar-label">{{ column.label }}</span>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-    {% if segmented_legend %}
-      <ul class="chart-legend" aria-label="Relationship colour key">
-        {% for item in segmented_legend %}
-          <li>
-            <span class="chart-legend__swatch" style="background: {{ item.color }};" aria-hidden="true"></span>
-            <span>{{ item.label }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  {% else %}
-    <p class="muted">No responses to chart yet.</p>
-  {% endif %}
-</section>
+{% include "course_iframe/_relationship_chart.html" %}
 
 {% endblock %}

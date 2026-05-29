@@ -1,0 +1,357 @@
+<section class="panel chart-panel">
+  <div class="panel-heading">
+    <h2 data-chart-heading>{{ y_axis_label }} vs {{ x_axis_label }}</h2>
+  </div>
+
+  {% if is_research_view %}
+    <form method="post" class="axis-builder" data-axis-builder>
+      {% csrf_token %}
+      {% for axis_prefix, axis_label, axis_config in axis_builder_rows %}
+        <fieldset class="axis-builder__axis" data-axis="{{ axis_prefix }}">
+          <legend>{{ axis_label }}</legend>
+          <div class="axis-builder__mode">
+            <label>
+              <input type="radio" name="{{ axis_prefix }}_mode" value="single"{% if not axis_config.denominator %} checked{% endif %}>
+              <span>Single field</span>
+            </label>
+            <label>
+              <input type="radio" name="{{ axis_prefix }}_mode" value="ratio"{% if axis_config.denominator %} checked{% endif %}>
+              <span>Ratio</span>
+            </label>
+          </div>
+          <div class="axis-builder__fields">
+            <label class="axis-builder__field">
+              <span>Numerator</span>
+              <select name="{{ axis_prefix }}_numerator">
+                {% for choice in numeric_choices %}
+                  <option value="{{ choice.key }}"{% if choice.key == axis_config.numerator %} selected{% endif %}>{{ choice.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <span class="axis-builder__divide" aria-hidden="true">÷</span>
+            <label class="axis-builder__field axis-builder__field--denominator">
+              <span>Denominator</span>
+              <select name="{{ axis_prefix }}_denominator">
+                <option value="">— pick a field —</option>
+                {% for choice in numeric_choices %}
+                  <option value="{{ choice.key }}"{% if choice.key == axis_config.denominator %} selected{% endif %}>{{ choice.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="axis-builder__field axis-builder__field--ratio-label">
+              <span>Display label</span>
+              <input type="text" name="{{ axis_prefix }}_label" value="{{ axis_config.label|default:'' }}" placeholder="e.g. Rent per m²" maxlength="80">
+            </label>
+          </div>
+        </fieldset>
+      {% endfor %}
+      <div class="form-actions axis-builder__actions">
+        <button class="button button-secondary button-small" type="button" data-axis-reset disabled>Reset</button>
+        <button class="button button-small" type="submit" data-axis-save disabled>Save axes</button>
+      </div>
+    </form>
+
+    <div class="focus-picker">
+      <label class="focus-picker__label" for="housing-focus-select">Highlight a respondent</label>
+      <select id="housing-focus-select" data-focus-select>
+        <option value="">None (cohort only)</option>
+        {% for pid in focus_choices %}
+          <option value="{{ pid }}">{{ pid }}</option>
+        {% endfor %}
+      </select>
+      <p class="focus-picker__hint">Marks one student's entries on the scatter plot. Preview only &mdash; not shown to students.</p>
+    </div>
+  {% endif %}
+  <div
+    class="scatter-plot"
+    data-scatter-plot
+  >
+    <svg viewBox="0 0 720 460" role="img" aria-label="Housing scatter plot"></svg>
+    <p class="muted scatter-plot__empty" data-scatter-empty hidden>No housing entries match these axes.</p>
+  </div>
+  <ul class="chart-legend chart-legend--interactive" aria-label="Toggle scatter plot series">
+    <li>
+      <button class="chart-legend__toggle is-active" type="button" data-scatter-toggle="cohort" aria-pressed="true">
+        <span class="chart-legend__swatch chart-legend__swatch--cohort" aria-hidden="true"></span>
+        <span>Cohort entries</span>
+      </button>
+    </li>
+    {% if has_your_points %}
+      <li>
+        <button class="chart-legend__toggle is-active" type="button" data-scatter-toggle="yours" aria-pressed="true">
+          <span class="chart-legend__swatch chart-legend__swatch--yours" aria-hidden="true"></span>
+          <span>Your entries</span>
+        </button>
+      </li>
+    {% elif is_research_view %}
+      <li data-yours-legend hidden>
+        <button class="chart-legend__toggle is-active" type="button" data-scatter-toggle="yours" aria-pressed="true">
+          <span class="chart-legend__swatch chart-legend__swatch--yours" aria-hidden="true"></span>
+          <span data-yours-legend-label>Selected respondent</span>
+        </button>
+      </li>
+    {% endif %}
+  </ul>
+</section>
+
+{{ payloads|json_script:"housing-payloads" }}
+{{ axis_state|json_script:"housing-axis-state" }}
+{{ numeric_labels|json_script:"housing-numeric-labels" }}
+
+<script>
+  (() => {
+    const host = document.querySelector("[data-scatter-plot]");
+    if (!host) return;
+    const payloadsNode = document.getElementById("housing-payloads");
+    const axisStateNode = document.getElementById("housing-axis-state");
+    const labelsNode = document.getElementById("housing-numeric-labels");
+    if (!payloadsNode || !axisStateNode || !labelsNode) return;
+
+    const payloads = JSON.parse(payloadsNode.textContent || "[]");
+    const initialAxisState = JSON.parse(axisStateNode.textContent || "{}");
+    const numericLabels = JSON.parse(labelsNode.textContent || "{}");
+
+    const svg = host.querySelector("svg");
+    const emptyNode = host.querySelector("[data-scatter-empty]");
+    const heading = document.querySelector("[data-chart-heading]");
+    const toggles = document.querySelectorAll("[data-scatter-toggle]");
+    const visible = { cohort: true, yours: true };
+
+    // Working copy of axis state — mutated by the axis builder.
+    let axisState = JSON.parse(JSON.stringify(initialAxisState));
+
+    // Research-only respondent highlight. When set, a point counts as "yours" if its
+    // participant_id matches; otherwise the server-provided is_yours flag is used.
+    const focusSelect = document.querySelector("[data-focus-select]");
+    const yoursLegend = document.querySelector("[data-yours-legend]");
+    const yoursLegendLabel = document.querySelector("[data-yours-legend-label]");
+    let focusedPid = "";
+
+    const axisValue = (values, spec) => {
+      if (!spec || !spec.numerator) return null;
+      const num = values[spec.numerator];
+      if (num === undefined || num === null) return null;
+      if (!spec.denominator) return Number(num);
+      const den = values[spec.denominator];
+      if (den === undefined || den === null || Number(den) === 0) return null;
+      return Number(num) / Number(den);
+    };
+
+    const axisLabel = spec => {
+      if (!spec) return "";
+      if (spec.label && spec.label.trim()) return spec.label.trim();
+      const numName = numericLabels[spec.numerator] || spec.numerator || "";
+      if (spec.denominator) {
+        const denName = numericLabels[spec.denominator] || spec.denominator;
+        return `${numName} ÷ ${denName}`;
+      }
+      return numName;
+    };
+
+    const computePoints = () => payloads
+      .map(p => {
+        const x = axisValue(p.values, axisState.x);
+        const y = axisValue(p.values, axisState.y);
+        if (x === null || y === null) return null;
+        const isYours = focusedPid ? p.participant_id === focusedPid : p.is_yours;
+        return { x, y, district: p.district, is_yours: isYours };
+      })
+      .filter(Boolean);
+
+    const ns = "http://www.w3.org/2000/svg";
+    const make = (tag, attrs = {}, text) => {
+      const el = document.createElementNS(ns, tag);
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+      if (text !== undefined) el.textContent = text;
+      return el;
+    };
+
+    const W = 720, H = 460;
+    const padL = 64, padR = 24, padT = 28, padB = 56;
+    const innerW = W - padL - padR;
+    const innerH = H - padT - padB;
+    const fmt = v => {
+      if (Math.abs(v) >= 100) return v.toFixed(0);
+      if (Math.abs(v) >= 10) return v.toFixed(1);
+      return v.toFixed(2);
+    };
+
+    let pointNodes = [];
+
+    const render = () => {
+      const xLabel = axisLabel(axisState.x);
+      const yLabel = axisLabel(axisState.y);
+      if (heading) heading.textContent = `${yLabel} vs ${xLabel}`;
+      svg.setAttribute("aria-label", `Scatter of ${yLabel} against ${xLabel}`);
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      pointNodes = [];
+
+      const points = computePoints();
+      if (!points.length) {
+        if (emptyNode) emptyNode.hidden = false;
+        return;
+      }
+      if (emptyNode) emptyNode.hidden = true;
+
+      const xs = points.map(p => p.x);
+      const ys = points.map(p => p.y);
+      const xMin = Math.min(...xs);
+      const xMax = Math.max(...xs);
+      const yMin = Math.min(...ys);
+      const yMax = Math.max(...ys);
+      const xRange = xMax - xMin || 1;
+      const yRange = yMax - yMin || 1;
+      const xLo = xMin - xRange * 0.06;
+      const xHi = xMax + xRange * 0.06;
+      const yLo = yMin - yRange * 0.06;
+      const yHi = yMax + yRange * 0.06;
+      const toX = v => padL + ((v - xLo) / (xHi - xLo)) * innerW;
+      const toY = v => padT + innerH - ((v - yLo) / (yHi - yLo)) * innerH;
+
+      svg.appendChild(make("line", { x1: padL, y1: padT, x2: padL, y2: padT + innerH, class: "scatter-axis" }));
+      svg.appendChild(make("line", { x1: padL, y1: padT + innerH, x2: padL + innerW, y2: padT + innerH, class: "scatter-axis" }));
+
+      const tickCount = 4;
+      for (let i = 0; i <= tickCount; i++) {
+        const t = i / tickCount;
+        const xv = xLo + t * (xHi - xLo);
+        const yv = yLo + t * (yHi - yLo);
+        const xp = toX(xv);
+        const yp = toY(yv);
+        svg.appendChild(make("line", { x1: xp, y1: padT, x2: xp, y2: padT + innerH, class: "scatter-grid" }));
+        svg.appendChild(make("line", { x1: padL, y1: yp, x2: padL + innerW, y2: yp, class: "scatter-grid" }));
+        svg.appendChild(make("text", { x: xp, y: padT + innerH + 18, class: "scatter-tick scatter-tick--x" }, fmt(xv)));
+        svg.appendChild(make("text", { x: padL - 10, y: yp + 4, class: "scatter-tick scatter-tick--y" }, fmt(yv)));
+      }
+
+      svg.appendChild(make("text", { x: padL + innerW / 2, y: H - 12, class: "scatter-axis-label" }, xLabel));
+      svg.appendChild(make("text", { x: 16, y: padT + innerH / 2, class: "scatter-axis-label scatter-axis-label--y", transform: `rotate(-90 16 ${padT + innerH / 2})` }, yLabel));
+
+      points
+        .slice()
+        .sort((a, b) => (a.is_yours === b.is_yours ? 0 : a.is_yours ? 1 : -1))
+        .forEach(p => {
+          const series = p.is_yours ? "yours" : "cohort";
+          const cls = p.is_yours ? "scatter-point scatter-point--yours" : "scatter-point";
+          const dot = make("circle", { cx: toX(p.x), cy: toY(p.y), r: p.is_yours ? 7 : 5, class: cls, "data-scatter-series": series });
+          if (p.district) dot.appendChild(make("title", {}, p.district));
+          svg.appendChild(dot);
+          pointNodes.push(dot);
+        });
+
+      syncSeriesVisibility();
+    };
+
+    const syncSeriesVisibility = () => {
+      pointNodes.forEach(dot => {
+        dot.style.display = visible[dot.getAttribute("data-scatter-series")] ? "" : "none";
+      });
+      toggles.forEach(button => {
+        const series = button.dataset.scatterToggle;
+        button.classList.toggle("is-active", visible[series]);
+        button.setAttribute("aria-pressed", String(visible[series]));
+      });
+    };
+
+    toggles.forEach(button => {
+      button.addEventListener("click", () => {
+        const series = button.dataset.scatterToggle;
+        visible[series] = !visible[series];
+        syncSeriesVisibility();
+      });
+    });
+
+    if (focusSelect) {
+      focusSelect.addEventListener("change", () => {
+        focusedPid = focusSelect.value;
+        const active = Boolean(focusedPid);
+        if (active) visible.yours = true;
+        if (yoursLegend) yoursLegend.hidden = !active;
+        if (active && yoursLegendLabel) yoursLegendLabel.textContent = `${focusedPid}'s entries`;
+        render();
+      });
+    }
+
+    render();
+
+    // Axis builder (research view): live re-render on change, explicit save.
+    const builder = document.querySelector("[data-axis-builder]");
+    if (!builder) return;
+
+    const axisKeyFor = prefix => (prefix === "x_axis" ? "x" : "y");
+    const saveButton = builder.querySelector("[data-axis-save]");
+    const resetButton = builder.querySelector("[data-axis-reset]");
+
+    const syncFieldVisibility = prefix => {
+      const fieldset = builder.querySelector(`[data-axis="${prefix}"]`);
+      if (!fieldset) return;
+      const mode = fieldset.querySelector(`input[name="${prefix}_mode"]:checked`)?.value;
+      const isRatio = mode === "ratio";
+      fieldset.querySelectorAll(".axis-builder__field--denominator, .axis-builder__divide, .axis-builder__field--ratio-label")
+        .forEach(node => node.classList.toggle("is-hidden", !isRatio));
+    };
+
+    const readBuilderSpec = prefix => {
+      const fieldset = builder.querySelector(`[data-axis="${prefix}"]`);
+      const mode = fieldset.querySelector(`input[name="${prefix}_mode"]:checked`)?.value || "single";
+      const numerator = fieldset.querySelector(`select[name="${prefix}_numerator"]`)?.value || "";
+      const denominator = mode === "ratio" ? (fieldset.querySelector(`select[name="${prefix}_denominator"]`)?.value || "") : "";
+      const label = mode === "ratio" ? (fieldset.querySelector(`input[name="${prefix}_label"]`)?.value || "").trim() : "";
+      return { numerator, denominator, label };
+    };
+
+    const specsEqual = (a, b) => a.numerator === b.numerator && a.denominator === b.denominator && a.label === b.label;
+
+    const isComplete = spec => Boolean(spec.numerator) && (!spec.denominator || spec.denominator !== spec.numerator);
+
+    const updateDirtyState = () => {
+      const x = readBuilderSpec("x_axis");
+      const y = readBuilderSpec("y_axis");
+      const dirty = !specsEqual(x, initialAxisState.x) || !specsEqual(y, initialAxisState.y);
+      const complete = isComplete(x) && isComplete(y);
+      if (saveButton) saveButton.disabled = !(dirty && complete);
+      if (resetButton) resetButton.disabled = !dirty;
+    };
+
+    const applyBuilderToChart = () => {
+      const x = readBuilderSpec("x_axis");
+      const y = readBuilderSpec("y_axis");
+      if (!isComplete(x) || !isComplete(y)) return;
+      axisState = { x, y };
+      render();
+    };
+
+    ["x_axis", "y_axis"].forEach(syncFieldVisibility);
+    updateDirtyState();
+
+    builder.addEventListener("change", event => {
+      const prefix = event.target.closest("[data-axis]")?.dataset.axis;
+      if (prefix) syncFieldVisibility(prefix);
+      applyBuilderToChart();
+      updateDirtyState();
+    });
+    builder.addEventListener("input", event => {
+      if (event.target.matches('input[type="text"]')) {
+        applyBuilderToChart();
+        updateDirtyState();
+      }
+    });
+
+    if (resetButton) {
+      resetButton.addEventListener("click", () => {
+        ["x_axis", "y_axis"].forEach(prefix => {
+          const fieldset = builder.querySelector(`[data-axis="${prefix}"]`);
+          const initial = initialAxisState[axisKeyFor(prefix)];
+          const wantRatio = Boolean(initial.denominator);
+          fieldset.querySelector(`input[name="${prefix}_mode"][value="${wantRatio ? "ratio" : "single"}"]`).checked = true;
+          fieldset.querySelector(`select[name="${prefix}_numerator"]`).value = initial.numerator || "";
+          fieldset.querySelector(`select[name="${prefix}_denominator"]`).value = initial.denominator || "";
+          fieldset.querySelector(`input[name="${prefix}_label"]`).value = initial.label || "";
+          syncFieldVisibility(prefix);
+        });
+        applyBuilderToChart();
+        updateDirtyState();
+      });
+    }
+  })();
+</script>

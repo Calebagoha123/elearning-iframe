@@ -124,7 +124,6 @@ class HousingEntryForm(forms.Form):
             HOUSING_FIELD_DECIMAL,
             HOUSING_FIELD_INTEGER,
             HOUSING_FIELD_PLACE,
-            HOUSING_FIELD_TEXT,
             housing_schema,
         )
 
@@ -550,27 +549,19 @@ HousingFieldFormSetFactory = formset_factory(
 
 
 class HousingEditForm(forms.Form):
-    """Researcher editor for the housing question wording, schema, and scatter axes."""
+    """Researcher editor for the housing question wording and schema."""
 
     question_text = forms.CharField(
         label="Question wording",
         widget=forms.Textarea(attrs={"rows": 3}),
     )
-    x_axis = forms.ChoiceField(label="Scatter X-axis")
-    y_axis = forms.ChoiceField(label="Scatter Y-axis")
 
     def __init__(self, *args, question=None, **kwargs):
-        from .services import housing_axis_choices, housing_scatter_config, housing_schema
+        from .services import housing_schema
         super().__init__(*args, **kwargs)
         self.question = question
-        self._axis_choices = housing_axis_choices(question) if question is not None else []
-        self.fields["x_axis"].choices = self._axis_choices
-        self.fields["y_axis"].choices = self._axis_choices
         if question is not None and not self.is_bound:
-            config = housing_scatter_config(question)
             self.fields["question_text"].initial = question.question_text
-            self.fields["x_axis"].initial = config["x_axis"]
-            self.fields["y_axis"].initial = config["y_axis"]
         self._initial_schema = housing_schema(question) if question is not None else []
 
     def initial_field_rows(self):
@@ -590,32 +581,12 @@ class HousingEditForm(forms.Form):
             )
         return rows
 
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("x_axis") and cleaned.get("y_axis") and cleaned["x_axis"] == cleaned["y_axis"]:
-            self.add_error("y_axis", "Choose a different variable for the Y axis.")
-        return cleaned
-
     def has_meaningful_changes(self, fields):
-        return self.schema_has_meaningful_changes(fields) or self.visualization_has_meaningful_changes()
-
-    def schema_has_meaningful_changes(self, fields):
         if self.question is None:
             return True
         if self.cleaned_data["question_text"] != self.question.question_text:
             return True
         return fields != self._initial_schema
-
-    def visualization_has_meaningful_changes(self):
-        if self.question is None:
-            return True
-        from .services import housing_scatter_config
-        config = housing_scatter_config(self.question)
-        if self.cleaned_data["x_axis"] != config["x_axis"]:
-            return True
-        if self.cleaned_data["y_axis"] != config["y_axis"]:
-            return True
-        return False
 
     def serialize_fields(self, field_formset):
         from .services import HOUSING_FIELD_CHOICE

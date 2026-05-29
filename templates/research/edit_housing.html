@@ -115,22 +115,7 @@
       {% endif %}
     </fieldset>
 
-    <fieldset>
-      <legend>Participant scatter plot</legend>
-      <p class="muted">Pick which numeric fields form the comparison scatter shown to participants. Only numeric fields appear here.</p>
-      <div class="axis-grid">
-        <label>
-          <span>{{ form.x_axis.label }}</span>
-          {{ form.x_axis }}
-          {% if form.x_axis.errors %}<p class="error">{{ form.x_axis.errors|striptags }}</p>{% endif %}
-        </label>
-        <label>
-          <span>{{ form.y_axis.label }}</span>
-          {{ form.y_axis }}
-          {% if form.y_axis.errors %}<p class="error">{{ form.y_axis.errors|striptags }}</p>{% endif %}
-        </label>
-      </div>
-    </fieldset>
+    <p class="muted">Scatter plot axes are configured on the <a href="{% url 'research-housing-plots' %}">plot page</a>.</p>
 
     <div class="form-actions">
       <button class="button" type="submit" data-save-changes disabled>Save changes</button>
@@ -147,14 +132,12 @@
   const totalForms = form.querySelector("input[name='fields-TOTAL_FORMS']");
   const saveButton = form.querySelector("[data-save-changes]");
   let initialState = "";
-  let initialVersionedState = "";
 
-  const serialize = (includeField = () => true) => Array
+  const serialize = () => Array
     .from(new FormData(form).entries())
-    .filter(([key]) => key !== "csrfmiddlewaretoken" && includeField(key))
+    .filter(([key]) => key !== "csrfmiddlewaretoken")
     .map(([key, value]) => `${key}=${value}`)
     .join("&");
-  const serializeVersionedFields = () => serialize(key => !["x_axis", "y_axis"].includes(key));
 
   const updateSaveState = () => {
     if (saveButton) saveButton.disabled = serialize() === initialState;
@@ -214,7 +197,6 @@
   list.querySelectorAll("[data-housing-field-row]").forEach(wireRow);
   reindex();
   initialState = serialize();
-  initialVersionedState = serializeVersionedFields();
   updateSaveState();
 
   form.querySelector("[data-housing-field-add]")?.addEventListener("click", () => {
@@ -234,8 +216,7 @@
       event.preventDefault();
       return;
     }
-    const versionedFieldsChanged = serializeVersionedFields() !== initialVersionedState;
-    if (versionedFieldsChanged && !window.confirm(form.dataset.confirmVersioning)) {
+    if (serialize() !== initialState && !window.confirm(form.dataset.confirmVersioning)) {
       event.preventDefault();
     }
   });

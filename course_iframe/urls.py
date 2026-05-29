@@ -13,6 +13,7 @@ urlpatterns = [
     path("activities/housing/", views.housing_activity, name="housing-activity"),
     path("activities/housing/entries/<int:response_id>/delete/", views.housing_delete_entry, name="housing-delete-entry"),
     path("activities/housing/results/", views.housing_results, name="housing-results"),
+    path("activities/summary/", views.student_summary, name="student-summary"),
     path("research/login/", views.research_login, name="research-login"),
     path("research/logout/", views.research_logout, name="research-logout"),
     path("research/dashboard/", views.research_dashboard, name="research-dashboard"),

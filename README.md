@@ -22,10 +22,15 @@ For HTTPS iframe deployment behind a reverse proxy, set
 ```
 /iframe/relationship/
 /iframe/housing/
+/iframe/summary/
 ```
 
-Each activity asks the student to enter their Moodle pseudoname, then carries
-them through the form.
+Each URL first asks the student to enter their Moodle pseudoname. The two
+activity URLs then carry them through the relevant form. `/iframe/summary/`
+opens a standalone, read-only overview of that student's own responses to both
+activities — the relationship stacked bar and the housing scatter — plotted
+alongside the cohort. The summary is also linked from the in-app activities
+landing page (`/activities/`).
 
 ### Legacy signed entry point
 
@@ -233,32 +238,32 @@ uv sync
 
 ## Researcher dashboard
 
-After logging in at `/research/login/`, the dashboard shows:
+After logging in at `/research/login/`, the dashboard links to per-activity
+tools:
 
-- Participant + response counts
-- Edit relationship survey (wording, options, Likert scale)
-- Edit housing schema (add/remove/reorder fields, choose field types)
-- View aggregated plots
-- Filterable CSV export
+- Participant and response counts
+- **Edit relationship survey** — question wording, relationship options, and the
+  Likert scale
+- **Edit housing schema** — add, remove, reorder, and retype the housing fields
+- **Plots** — the aggregated visualization for each activity (see below)
+- **CSV export** — filterable by activity and date range, with an export log
 
-Editing a question creates a new active version. Existing responses stay
-tied to the previous version and are excluded from current cohort plots.
+Editing a question creates a new active version. Existing responses stay tied
+to the previous version and are excluded from current cohort plots.
 
----
+### Plot pages
 
-## What's covered vs deferred
+Each activity has its own plot page, reached from the dashboard:
 
-**Covered:**
-- Strict-typed housing form (currency €, integers, decimals, OpenStreetMap-verified place fields)
-- Researcher-driven dynamic housing schema (add/remove/reorder/retype fields with stable keys)
-- Question versioning across both activities
-- CSV export with date/activity filtering + export log
-- Hashed researcher password, structured JSON logs with per-session researcher actor ids, conditional Sentry, security headers, healthz, Docker auto-migrate, nightly local Postgres backups
+- **Relationship** — a word cloud plus a stacked bar chart of income comparison
+  by relationship type. A "What students see" control chooses the student-facing
+  display mode: cohort only, the student's own only, or side-by-side.
+- **Housing** — a scatter plot. Its X and Y axes are configured here (a single
+  numeric field, or a ratio of two such as rent ÷ m²); the schema editor only
+  manages which fields exist.
 
-**Deferred to future phases:**
-- Optional research consent opt-in flow (current notice is informational)
-- GDPR deletion UI (shell command runbook entry is the interim path)
-- XLSX export (CSV opens fine in Excel)
-- Visualization privacy thresholds (everyone sees results with n=1)
-- Per-researcher Django auth accounts (single shared password is sufficient for the current researcher group)
-- Edit / delete of relationship survey responses by students (housing has a delete button)
+Both plot pages also have a **respondent overlay** dropdown. Selecting a
+pseudoname overlays that one student's responses on the cohort chart so a
+researcher can inspect an individual in context. It is a researcher-only
+preview — never shown to students, and it does not change the student-facing
+display.

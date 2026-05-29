@@ -1,0 +1,273 @@
+<section class="panel chart-panel">
+  <div class="panel-heading">
+    <h2>Income comparison by relationship</h2>
+  </div>
+
+  {% if is_research_view %}
+    <form method="post" class="display-mode-picker" data-display-mode-picker>
+      {% csrf_token %}
+      <fieldset>
+        <legend>What students see</legend>
+        <div class="display-mode-picker__options">
+          {% for value, label in display_mode_choices %}
+            <label>
+              <input type="radio" name="display_mode" value="{{ value }}"{% if value == segmented_mode %} checked{% endif %}>
+              <span>{{ label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="form-actions display-mode-picker__actions">
+        <button class="button button-secondary button-small" type="button" data-mode-reset disabled>Reset</button>
+        <button class="button button-small" type="submit" data-mode-save disabled>Save</button>
+      </div>
+    </form>
+
+    <div class="focus-picker">
+      <label class="focus-picker__label" for="relationship-focus-select">Preview a respondent</label>
+      <select id="relationship-focus-select" data-focus-select>
+        <option value="">Cohort only (no individual)</option>
+        {% for pid in focus_choices %}
+          <option value="{{ pid }}">{{ pid }}</option>
+        {% endfor %}
+      </select>
+      <p class="focus-picker__hint">Overlays one student's responses as the &ldquo;yours&rdquo; series. Choose <em>Side-by-side</em> to see them next to the cohort, or <em>Yours only</em> to isolate them. Preview only &mdash; students still see their own data.</p>
+    </div>
+  {% endif %}
+
+  <p class="segmented-chart-key" data-segmented-key role="status"></p>
+
+  <div class="segmented-chart-frame" data-segmented-chart-host>
+    <div class="segmented-y-axis" aria-hidden="true">
+      <span class="segmented-y-axis-title">Frequency</span>
+      <div class="segmented-y-ticks" data-segmented-y-ticks></div>
+    </div>
+    <div class="segmented-bar-area">
+      <div class="segmented-bar-chart" data-segmented-chart></div>
+    </div>
+  </div>
+  <p class="muted segmented-chart-empty" data-segmented-empty hidden>No responses to chart yet.</p>
+
+  {% if segmented_legend %}
+    <ul class="chart-legend chart-legend--interactive" aria-label="Toggle relationships in the chart">
+      {% for item in segmented_legend %}
+        <li>
+          <button class="chart-legend__toggle is-active" type="button" data-relationship-toggle="{{ item.label }}" aria-pressed="true">
+            <span class="chart-legend__swatch" style="background: {{ item.color }};" aria-hidden="true"></span>
+            <span>{{ item.label }}</span>
+          </button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+{{ segmented_columns|json_script:"relationship-segmented-columns" }}
+<script id="relationship-segmented-meta" type="application/json">{"mode": "{{ segmented_mode }}"}</script>
+{% if is_research_view %}{{ participant_stacks|json_script:"relationship-participant-stacks" }}{% endif %}
+
+<script>
+  (() => {
+    const host = document.querySelector("[data-segmented-chart-host]");
+    const chartEl = host?.querySelector("[data-segmented-chart]");
+    const yTicksEl = host?.querySelector("[data-segmented-y-ticks]");
+    const emptyEl = document.querySelector("[data-segmented-empty]");
+    const columnsNode = document.getElementById("relationship-segmented-columns");
+    const metaNode = document.getElementById("relationship-segmented-meta");
+    if (!host || !chartEl || !yTicksEl || !columnsNode || !metaNode) return;
+
+    const columns = JSON.parse(columnsNode.textContent || "[]");
+    const meta = JSON.parse(metaNode.textContent || "{}");
+    const initialMode = meta.mode || "cohort";
+
+    let hasYoursData = columns.some(col => (col.yours?.segments?.length || 0) > 0);
+    const hidden = new Set();
+    let mode = initialMode;
+
+    const frequencyAxis = max => {
+      if (max <= 0) return { max: 1, ticks: [1, 0] };
+      if (max <= 4) {
+        const ticks = [];
+        for (let v = max; v >= 0; v--) ticks.push(v);
+        return { max, ticks };
+      }
+      const step = Math.ceil(max / 4);
+      const axisMax = step * 4;
+      const ticks = [];
+      for (let i = 0; i < 5; i++) ticks.push(axisMax - step * i);
+      return { max: axisMax, ticks };
+    };
+
+    const stackKeys = () => {
+      if (mode === "yours") return ["yours"];
+      if (mode === "cohort") return ["cohort"];
+      return hasYoursData ? ["yours", "cohort"] : ["cohort"];
+    };
+
+    const visibleSegments = stack => (stack.segments || []).filter(s => !hidden.has(s.label));
+    const visibleTotal = stack => visibleSegments(stack).reduce((acc, s) => acc + s.count, 0);
+
+    const renderYTicks = ticks => {
+      yTicksEl.innerHTML = "";
+      ticks.forEach(tick => {
+        const span = document.createElement("span");
+        span.textContent = tick;
+        yTicksEl.appendChild(span);
+      });
+    };
+
+    const renderStack = (stack, stackKey, axisMax, ariaLabel) => {
+      const stackEl = document.createElement("div");
+      stackEl.className = `segmented-bar-stack segmented-bar-stack--${stackKey}`;
+      stackEl.setAttribute("aria-label", ariaLabel);
+      visibleSegments(stack).forEach(segment => {
+        const segEl = document.createElement("span");
+        segEl.className = "segmented-bar-segment";
+        const pct = axisMax > 0 ? (segment.count / axisMax) * 100 : 0;
+        segEl.style.height = `${pct}%`;
+        segEl.style.background = segment.color;
+        segEl.setAttribute("title", `${segment.label} · ${segment.count}`);
+        segEl.dataset.relationshipLabel = segment.label;
+        stackEl.appendChild(segEl);
+      });
+      return stackEl;
+    };
+
+    const keyEl = document.querySelector("[data-segmented-key]");
+    const renderKey = (visibleStacks) => {
+      if (!keyEl) return;
+      keyEl.innerHTML = "";
+      if (visibleStacks.length === 0) {
+        keyEl.hidden = true;
+        return;
+      }
+      keyEl.hidden = false;
+      const entries = visibleStacks.includes("yours") && visibleStacks.includes("cohort")
+        ? [{ key: "yours", label: "Yours" }, { key: "cohort", label: "Cohort" }]
+        : visibleStacks.includes("yours")
+          ? [{ key: "yours", label: "Showing your responses" }]
+          : [{ key: "cohort", label: "Showing the cohort's responses" }];
+      entries.forEach(entry => {
+        const chip = document.createElement("span");
+        chip.className = `segmented-chart-key__chip segmented-chart-key__chip--${entry.key}`;
+        const swatch = document.createElement("span");
+        swatch.className = `segmented-chart-key__swatch segmented-chart-key__swatch--${entry.key}`;
+        chip.appendChild(swatch);
+        const text = document.createElement("span");
+        text.textContent = entry.label;
+        chip.appendChild(text);
+        keyEl.appendChild(chip);
+      });
+    };
+
+    const render = () => {
+      const stacks = stackKeys();
+      let columnMax = 0;
+      columns.forEach(column => {
+        stacks.forEach(key => {
+          columnMax = Math.max(columnMax, visibleTotal(column[key] || { segments: [] }));
+        });
+      });
+
+      const anyData = columnMax > 0;
+      if (emptyEl) emptyEl.hidden = anyData;
+      host.hidden = !anyData;
+      if (!anyData) {
+        chartEl.innerHTML = "";
+        yTicksEl.innerHTML = "";
+        renderKey([]);
+        return;
+      }
+
+      renderKey(stacks);
+
+      const axis = frequencyAxis(columnMax);
+      renderYTicks(axis.ticks);
+
+      chartEl.innerHTML = "";
+      chartEl.dataset.mode = mode;
+      columns.forEach(column => {
+        const colEl = document.createElement("div");
+        colEl.className = "segmented-bar-column";
+
+        const pairEl = document.createElement("div");
+        pairEl.className = `segmented-bar-pair segmented-bar-pair--${stacks.length > 1 ? "double" : "single"}`;
+        stacks.forEach(key => {
+          const stack = column[key] || { segments: [], total: 0 };
+          const total = visibleTotal(stack);
+          pairEl.appendChild(renderStack(stack, key, axis.max, `${column.label} ${key === "yours" ? "you" : "cohort"}: ${total} responses`));
+        });
+        colEl.appendChild(pairEl);
+
+        const labelEl = document.createElement("span");
+        labelEl.className = "segmented-bar-label";
+        labelEl.textContent = column.label;
+        colEl.appendChild(labelEl);
+
+        chartEl.appendChild(colEl);
+      });
+    };
+
+    render();
+
+    // Relationship legend toggles (hide segments by label across both stacks).
+    document.querySelectorAll("[data-relationship-toggle]").forEach(button => {
+      button.addEventListener("click", () => {
+        const label = button.dataset.relationshipToggle;
+        if (hidden.has(label)) hidden.delete(label);
+        else hidden.add(label);
+        const active = !hidden.has(label);
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+        render();
+      });
+    });
+
+    // Respondent overlay dropdown (research view only): swap the "yours" stacks for
+    // the chosen participant and re-render. Driven entirely client-side.
+    const focusSelect = document.querySelector("[data-focus-select]");
+    const participantStacksNode = document.getElementById("relationship-participant-stacks");
+    if (focusSelect && participantStacksNode) {
+      const participantStacks = JSON.parse(participantStacksNode.textContent || "{}");
+      const emptyStack = { segments: [], total: 0 };
+      focusSelect.addEventListener("change", () => {
+        const pid = focusSelect.value;
+        const byKey = pid ? (participantStacks[pid] || {}) : {};
+        columns.forEach(col => { col.yours = byKey[col.key] || emptyStack; });
+        hasYoursData = columns.some(col => (col.yours?.segments?.length || 0) > 0);
+        render();
+      });
+    }
+
+    // Display mode picker (research view only).
+    const picker = document.querySelector("[data-display-mode-picker]");
+    if (!picker) return;
+    const saveButton = picker.querySelector("[data-mode-save]");
+    const resetButton = picker.querySelector("[data-mode-reset]");
+
+    const updateButtons = () => {
+      const current = picker.querySelector("input[name='display_mode']:checked")?.value || initialMode;
+      const dirty = current !== initialMode;
+      if (saveButton) saveButton.disabled = !dirty;
+      if (resetButton) resetButton.disabled = !dirty;
+    };
+
+    picker.addEventListener("change", event => {
+      if (event.target.name === "display_mode") {
+        mode = event.target.value;
+        render();
+        updateButtons();
+      }
+    });
+
+    if (resetButton) {
+      resetButton.addEventListener("click", () => {
+        const radio = picker.querySelector(`input[name='display_mode'][value='${initialMode}']`);
+        if (radio) radio.checked = true;
+        mode = initialMode;
+        render();
+        updateButtons();
+      });
+    }
+  })();
+</script>

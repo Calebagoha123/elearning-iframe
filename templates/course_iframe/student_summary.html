@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Your results{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow">Your summary</p>
+    <h1>Your results</h1>
+  </div>
+  <span class="identity">ID {{ participant.participant_id }}</span>
+</header>
+
+<section class="panel">
+  <p class="muted">Everything you've shared across both activities, shown alongside the cohort.</p>
+</section>
+
+{% include "course_iframe/_relationship_chart.html" %}
+{% include "course_iframe/_housing_chart.html" %}
+{% endblock %}

@@ -12,7 +12,7 @@
   <body>
     <main class="shell">
       {% if messages %}
-        <div class="messages" aria-live="polite">
+        <div class="messages" aria-live="polite" data-flash-messages>
           {% for message in messages %}
             <p class="message message-{{ message.tags }}">{{ message }}</p>
           {% endfor %}
@@ -20,5 +20,20 @@
       {% endif %}
       {% block content %}{% endblock %}
     </main>
+    <script>
+      (() => {
+        const container = document.querySelector("[data-flash-messages]");
+        if (!container) return;
+        const dismissable = container.querySelectorAll(".message:not(.message-error)");
+        if (!dismissable.length) return;
+        window.setTimeout(() => {
+          dismissable.forEach(node => node.classList.add("is-dismissing"));
+          window.setTimeout(() => {
+            dismissable.forEach(node => node.remove());
+            if (!container.querySelector(".message")) container.remove();
+          }, 450);
+        }, 5000);
+      })();
+    </script>
   </body>
 </html>

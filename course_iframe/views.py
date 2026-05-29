@@ -36,9 +36,11 @@ from .services import (
     RELATIONSHIP_SLUG,
     active_question,
     get_or_create_participant,
+    housing_axis_choices,
     housing_axis_label,
+    housing_numeric_fields,
+    housing_raw_payloads,
     housing_scatter_config,
-    housing_scatter_points,
     housing_schema,
     mvp_activities,
     palette_color_for_relationship,
@@ -46,14 +48,17 @@ from .services import (
     relationship_color_map,
     participant_from_session,
     relationship_counts,
+    relationship_display_mode,
     relationship_likert_choices,
     relationship_likert_points,
+    relationship_participant_stacks,
     relationship_segmented_bars,
     remember_participant,
     save_housing_response,
     save_relationship_responses,
     update_housing_schema,
     update_housing_visualization,
+    update_relationship_display_mode,
     update_relationship_settings,
     valid_iframe_signature,
 )
@@ -67,6 +72,10 @@ ACTIVITY_ENTRY_TARGETS = {
     HOUSING_SLUG: {
         "title": "Housing data entry",
         "redirect": "housing-activity",
+    },
+    "summary": {
+        "title": "Your results",
+        "redirect": "student-summary",
     },
 }
 
@@ -295,10 +304,7 @@ def relationship_activity(request, participant):
     )
 
 
-@student_required
-def relationship_results(request, participant):
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
-    count = participant_count_for_question(question)
+def _relationship_chart_context(question, participant, mode=None):
     counts = relationship_counts(question)
     colors_by_value = relationship_color_map(question)
     max_count = max((item["count"] for item in counts), default=1)
@@ -316,20 +322,31 @@ def relationship_results(request, participant):
         }
         for item in counts
     ]
-    segmented = relationship_segmented_bars(question)
+    segmented = relationship_segmented_bars(question, participant=participant, mode=mode)
     axis = frequency_axis(segmented["column_max"])
+    return {
+        "words": words,
+        "segmented_columns": segmented["columns"],
+        "segmented_max": segmented["column_max"],
+        "segmented_axis_max": axis["max"],
+        "segmented_y_ticks": axis["ticks"],
+        "segmented_legend": segmented["legend"],
+        "segmented_mode": segmented["mode"],
+    }
+
+
+@student_required
+def relationship_results(request, participant):
+    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    count = participant_count_for_question(question)
+    chart_context = _relationship_chart_context(question, participant)
     return render(
         request,
         "course_iframe/relationship_results.html",
         {
             "participant": participant,
             "count": count,
-            "words": words,
-            "segmented_columns": segmented["columns"],
-            "segmented_max": segmented["column_max"],
-            "segmented_axis_max": axis["max"],
-            "segmented_y_ticks": axis["ticks"],
-            "segmented_legend": segmented["legend"],
+            **chart_context,
         },
     )
 
@@ -380,29 +397,52 @@ def housing_delete_entry(request, participant, response_id):
     return redirect("housing-activity")
 
 
+def _housing_chart_context(question, participant, include_identity=False):
+    config = housing_scatter_config(question)
+    payloads = housing_raw_payloads(question, participant, include_identity=include_identity)
+    numeric_labels = {field["key"]: field["label"] for field in housing_numeric_fields(question)}
+    return {
+        "payloads": payloads,
+        "axis_state": {"x": config["x_axis"], "y": config["y_axis"]},
+        "numeric_labels": numeric_labels,
+        "x_axis_label": housing_axis_label(question, config["x_axis"]),
+        "y_axis_label": housing_axis_label(question, config["y_axis"]),
+    }
+
+
 @student_required
 def housing_results(request, participant):
     question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
-    config = housing_scatter_config(question)
     count = participant_count_for_question(question)
-    points = housing_scatter_points(
-        question,
-        participant,
-        config["x_axis"],
-        config["y_axis"],
-    )
+    chart_context = _housing_chart_context(question, participant)
+    has_your_points = any(point["is_yours"] for point in chart_context["payloads"])
     return render(
         request,
         "course_iframe/housing_results.html",
         {
             "participant": participant,
             "count": count,
-            "points": points,
-            "has_your_points": any(point["is_yours"] for point in points),
-            "x_axis_label": housing_axis_label(question, config["x_axis"]),
-            "y_axis_label": housing_axis_label(question, config["y_axis"]),
-            "x_axis_key": config["x_axis"],
-            "y_axis_key": config["y_axis"],
+            "has_your_points": has_your_points,
+            **chart_context,
+        },
+    )
+
+
+@student_required
+def student_summary(request, participant):
+    relationship_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    housing_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+    relationship_context = _relationship_chart_context(relationship_question, participant)
+    housing_context = _housing_chart_context(housing_question, participant)
+    has_your_points = any(point["is_yours"] for point in housing_context["payloads"])
+    return render(
+        request,
+        "course_iframe/student_summary.html",
+        {
+            "participant": participant,
+            "has_your_points": has_your_points,
+            **relationship_context,
+            **housing_context,
         },
     )
 
@@ -501,67 +541,104 @@ def research_dashboard(request):
 
 
 @researcher_required
+@require_http_methods(["GET", "POST"])
 def research_relationship_plots(request):
     question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    if request.method == "POST":
+        previous_mode = relationship_display_mode(question)
+        new_mode = (request.POST.get("display_mode") or "").strip()
+        updated = update_relationship_display_mode(new_mode)
+        applied = relationship_display_mode(updated)
+        if applied == previous_mode:
+            messages.info(request, "No changes to relationship chart.")
+        else:
+            messages.success(request, "Relationship chart updated.")
+            logger.info(
+                "relationship display mode updated",
+                extra={
+                    "event": "researcher.relationship.display.updated",
+                    "activity": RELATIONSHIP_SLUG,
+                    "actor": researcher_actor(request),
+                    "mode": applied,
+                },
+            )
+        return redirect("research-relationship-plots")
+
     count = participant_count_for_question(question)
-    counts = relationship_counts(question)
-    colors_by_value = relationship_color_map(question)
-    max_count = max((item["count"] for item in counts), default=1)
-    words = [
-        {
-            "label": item["label"],
-            "count": item["count"],
-            "font_size": round(1.0 + (item["count"] / max_count) * 2.4, 2),
-            "color": palette_color_for_relationship(
-                item["label"],
-                item["is_other"],
-                item["value"],
-                colors_by_value,
-            ),
-        }
-        for item in counts
-    ]
-    segmented = relationship_segmented_bars(question)
-    axis = frequency_axis(segmented["column_max"])
+    chart_context = _relationship_chart_context(question, participant=None)
+    participant_stacks = relationship_participant_stacks(question)
     return render(
         request,
         "course_iframe/relationship_results.html",
         {
             "count": count,
-            "words": words,
-            "segmented_columns": segmented["columns"],
-            "segmented_max": segmented["column_max"],
-            "segmented_axis_max": axis["max"],
-            "segmented_y_ticks": axis["ticks"],
-            "segmented_legend": segmented["legend"],
+            "display_mode_choices": [
+                ("both", "Side-by-side (yours + cohort)"),
+                ("yours", "Yours only"),
+                ("cohort", "Cohort only"),
+            ],
             "is_research_view": True,
+            "participant_stacks": participant_stacks,
+            "focus_choices": sorted(participant_stacks.keys()),
+            **chart_context,
         },
     )
 
 
+def _parse_axis_spec(post, prefix):
+    mode = post.get(f"{prefix}_mode", "single")
+    numerator = (post.get(f"{prefix}_numerator") or "").strip()
+    denominator = (post.get(f"{prefix}_denominator") or "").strip() if mode == "ratio" else ""
+    label = (post.get(f"{prefix}_label") or "").strip() if mode == "ratio" else ""
+    return {"numerator": numerator, "denominator": denominator, "label": label}
+
+
 @researcher_required
+@require_http_methods(["GET", "POST"])
 def research_housing_plots(request):
     question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
-    config = housing_scatter_config(question)
+    if request.method == "POST":
+        old_config = housing_scatter_config(question)
+        x_axis = _parse_axis_spec(request.POST, "x_axis")
+        y_axis = _parse_axis_spec(request.POST, "y_axis")
+        updated = update_housing_visualization(x_axis=x_axis, y_axis=y_axis)
+        new_config = housing_scatter_config(updated)
+        if new_config == old_config:
+            messages.info(request, "No changes to scatter plot.")
+        else:
+            messages.success(request, "Scatter plot axes updated.")
+            logger.info(
+                "housing scatter plot settings updated",
+                extra={
+                    "event": "researcher.housing.visualization.updated",
+                    "activity": HOUSING_SLUG,
+                    "actor": researcher_actor(request),
+                    "x_axis": new_config["x_axis"],
+                    "y_axis": new_config["y_axis"],
+                },
+            )
+        return redirect("research-housing-plots")
+
     count = participant_count_for_question(question)
-    points = housing_scatter_points(
-        question,
-        None,
-        config["x_axis"],
-        config["y_axis"],
+    chart_context = _housing_chart_context(question, None, include_identity=True)
+    numeric_choices = housing_axis_choices(question)
+    focus_choices = sorted(
+        {row["participant_id"] for row in chart_context["payloads"] if row.get("participant_id")}
     )
     return render(
         request,
         "course_iframe/housing_results.html",
         {
             "count": count,
-            "points": points,
             "has_your_points": False,
-            "x_axis_label": housing_axis_label(question, config["x_axis"]),
-            "y_axis_label": housing_axis_label(question, config["y_axis"]),
-            "x_axis_key": config["x_axis"],
-            "y_axis_key": config["y_axis"],
+            "focus_choices": focus_choices,
+            "numeric_choices": [{"key": key, "label": label} for key, label in numeric_choices],
+            "axis_builder_rows": [
+                ("x_axis", "X axis", chart_context["axis_state"]["x"]),
+                ("y_axis", "Y axis", chart_context["axis_state"]["y"]),
+            ],
             "is_research_view": True,
+            **chart_context,
         },
     )
 
@@ -625,14 +702,10 @@ def edit_housing(request):
         elif not form.has_meaningful_changes(new_fields):
             messages.info(request, "No changes to save.")
             return redirect("research-edit-housing")
-        elif form.schema_has_meaningful_changes(new_fields):
+        else:
             new_question = update_housing_schema(
                 question_text=form.cleaned_data["question_text"],
                 fields=new_fields,
-                viz={
-                    "x_axis": form.cleaned_data["x_axis"],
-                    "y_axis": form.cleaned_data["y_axis"],
-                },
             )
             logger.info(
                 "housing schema updated",
@@ -645,23 +718,6 @@ def edit_housing(request):
                 },
             )
             messages.success(request, "Housing activity updated.")
-            return redirect("research-edit-housing")
-        else:
-            updated_question = update_housing_visualization(
-                x_axis=form.cleaned_data["x_axis"],
-                y_axis=form.cleaned_data["y_axis"],
-            )
-            logger.info(
-                "housing scatter plot settings updated",
-                extra={
-                    "event": "researcher.housing.visualization.updated",
-                    "activity": HOUSING_SLUG,
-                    "actor": researcher_actor(request),
-                    "from_version": question.version,
-                    "to_version": updated_question.version,
-                },
-            )
-            messages.success(request, "Housing scatter plot updated.")
             return redirect("research-edit-housing")
 
     return render(

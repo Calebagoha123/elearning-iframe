@@ -325,6 +325,20 @@ h2 {
   content: none;
 }
 
+.topbar-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  justify-self: end;
+  align-self: stretch;
+}
+
+.topbar-meta .identity {
+  align-self: flex-end;
+}
+
 /* ─── layout primitives ───────────────────────────────────── */
 
 .activity-list,
@@ -749,6 +763,11 @@ input[type="radio"]:checked {
   background: var(--surface);
   color: var(--ink-soft);
   font-family: "Barlow", Bahnschrift, sans-serif;
+  transition: opacity 400ms ease;
+}
+
+.message.is-dismissing {
+  opacity: 0;
 }
 
 .message-error,
@@ -1110,7 +1129,21 @@ input[type="radio"]:checked {
   min-width: 0;
 }
 
+.segmented-bar-pair {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+.segmented-bar-pair--double .segmented-bar-stack {
+  width: min(100%, 30px);
+}
+
 .segmented-bar-stack {
+  position: relative;
   display: flex;
   flex-direction: column-reverse;
   align-self: end;
@@ -1121,6 +1154,24 @@ input[type="radio"]:checked {
   border: 0;
   border-radius: 3px 3px 0 0;
   overflow: hidden;
+}
+
+.segmented-bar-stack--yours .segmented-bar-segment {
+  position: relative;
+}
+
+.segmented-bar-stack--yours .segmented-bar-segment::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(253, 251, 244, 0.55),
+    rgba(253, 251, 244, 0.55) 3px,
+    transparent 3px,
+    transparent 8px
+  );
 }
 
 .segmented-bar-segment {
@@ -1205,6 +1256,238 @@ input[type="radio"]:checked {
 .chart-legend__toggle:focus-visible {
   outline: none;
   box-shadow: var(--focus);
+}
+
+/* ─── axis builder (research housing plot) ────────────────── */
+
+.axis-builder {
+  display: grid;
+  gap: 14px;
+  margin: 14px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.axis-builder__axis {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.axis-builder__axis legend {
+  padding: 0;
+  font-family: "Barlow Condensed", Bahnschrift, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--plum-deep);
+}
+
+.axis-builder__mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-family: "Barlow", Bahnschrift, sans-serif;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.axis-builder__mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.axis-builder__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.axis-builder__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  font-family: "Barlow Condensed", Bahnschrift, sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.axis-builder__field select,
+.axis-builder__field input[type="text"] {
+  font-family: "Barlow", Bahnschrift, sans-serif;
+  font-size: 0.95rem;
+  letter-spacing: normal;
+  text-transform: none;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: white;
+  color: var(--plum-deep);
+}
+
+.axis-builder__field--ratio-label {
+  flex: 1 1 220px;
+  min-width: 220px;
+}
+
+.axis-builder__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ─── display-mode picker (research relationship plot) ───── */
+
+.display-mode-picker {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.display-mode-picker fieldset {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.display-mode-picker legend {
+  padding: 0;
+  font-family: "Barlow Condensed", Bahnschrift, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--plum-deep);
+}
+
+.display-mode-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-family: "Barlow", Bahnschrift, sans-serif;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+.display-mode-picker__options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.display-mode-picker__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.focus-picker {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.focus-picker__label {
+  font-family: "Barlow Condensed", Bahnschrift, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--plum-deep);
+}
+
+.focus-picker select {
+  justify-self: start;
+  min-width: 240px;
+  max-width: 100%;
+}
+
+.focus-picker__hint {
+  margin: 0;
+  font-family: "Barlow", Bahnschrift, sans-serif;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.segmented-chart-empty {
+  margin: 24px 0;
+  text-align: center;
+}
+
+.segmented-chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  margin: 0 0 14px;
+  padding: 0;
+  font-family: "Barlow Condensed", Bahnschrift, sans-serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.segmented-chart-key__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.segmented-chart-key__swatch {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--plum);
+  border: 1px solid rgba(42, 15, 67, 0.18);
+  overflow: hidden;
+}
+
+.segmented-chart-key__swatch--yours::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(253, 251, 244, 0.55),
+    rgba(253, 251, 244, 0.55) 3px,
+    transparent 3px,
+    transparent 8px
+  );
+}
+
+.axis-builder__divide {
+  align-self: center;
+  padding-bottom: 6px;
+  font-size: 1.4rem;
+  color: var(--plum);
+}
+
+.axis-builder .is-hidden {
+  display: none;
 }
 
 /* ─── scatter plot (housing results) ──────────────────────── */
