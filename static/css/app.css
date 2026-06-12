@@ -1105,6 +1105,8 @@ input[type="radio"]:checked {
   position: relative;
   height: 240px;
   padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-bottom: 1px solid var(--plum-ink);
   border-left: 1px solid var(--plum-ink);
   background-image: linear-gradient(to top, rgba(199, 181, 142, 0.55) 1px, transparent 1px);
@@ -1118,6 +1120,7 @@ input[type="radio"]:checked {
   gap: 18px;
   align-items: end;
   height: 100%;
+  min-width: max-content;
 }
 
 .segmented-bar-column {
@@ -1607,7 +1610,16 @@ input[type="radio"]:checked {
 }
 
 .place-suggestion:first-child { border-top: 0; }
-.place-suggestion:hover { background: var(--surface-soft); color: var(--plum-deep); }
+.place-suggestion:hover,
+.place-suggestion.is-active {
+  background: var(--surface-soft);
+  color: var(--plum-deep);
+}
+
+.place-suggestion.is-active {
+  outline: 1px solid var(--plum);
+  outline-offset: -1px;
+}
 
 /* ─── researcher schema editor ────────────────────────────── */
 
@@ -1671,6 +1683,12 @@ input[type="radio"]:checked {
   background: var(--danger);
   border-color: var(--danger);
   color: #fdfbf4;
+}
+
+@media (max-width: 860px) {
+  .relationship-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1774,6 +1792,11 @@ input[type="radio"]:checked {
   .segmented-bar-area,
   .segmented-bar-chart {
     height: 200px;
+  }
+
+  .segmented-bar-chart {
+    grid-auto-columns: minmax(52px, 1fr);
+    gap: 12px;
   }
 
   .topbar { gap: 14px; }

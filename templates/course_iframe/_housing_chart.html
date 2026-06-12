@@ -46,8 +46,8 @@
         </fieldset>
       {% endfor %}
       <div class="form-actions axis-builder__actions">
-        <button class="button button-secondary button-small" type="button" data-axis-reset disabled>Reset</button>
-        <button class="button button-small" type="submit" data-axis-save disabled>Save axes</button>
+        <button class="button button-secondary button-small" type="button" data-axis-reset>Reset</button>
+        <button class="button button-small" type="submit" data-axis-save>Save axes</button>
       </div>
     </form>
 
@@ -188,9 +188,11 @@
 
       const points = computePoints();
       if (!points.length) {
+        svg.hidden = true;
         if (emptyNode) emptyNode.hidden = false;
         return;
       }
+      svg.hidden = false;
       if (emptyNode) emptyNode.hidden = true;
 
       const xs = points.map(p => p.x);

@@ -17,7 +17,26 @@ RELATIONSHIP_CHOICES = [
 
 
 class Command(BaseCommand):
-    help = "Create or update the default MVP activities and questions."
+    help = "Create missing default MVP activities and questions."
+
+    def ensure_seed_question(self, activity, slug, defaults):
+        questions = Question.objects.filter(activity=activity, slug=slug)
+        if not questions.exists():
+            Question.objects.create(
+                activity=activity,
+                slug=slug,
+                version=1,
+                **defaults,
+            )
+            return
+
+        active_questions = questions.filter(is_active=True).order_by("-version", "-id")
+        keep = active_questions.first()
+        if keep is None:
+            keep = questions.order_by("-version", "-id").first()
+            Question.objects.filter(pk=keep.pk).update(is_active=True)
+            return
+        active_questions.exclude(pk=keep.pk).update(is_active=False)
 
     def handle(self, *args, **options):
         relationship, _ = Activity.objects.update_or_create(
@@ -28,11 +47,10 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        Question.objects.update_or_create(
-            activity=relationship,
-            slug="relationship_type",
-            version=1,
-            defaults={
+        self.ensure_seed_question(
+            relationship,
+            "relationship_type",
+            {
                 "question_text": "Think of someone whose income you know roughly. What is your relationship to them?",
                 "field_type": "choice",
                 "options_json": {"choices": RELATIONSHIP_CHOICES, "likert_points": 5},
@@ -47,11 +65,10 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        Question.objects.update_or_create(
-            activity=housing,
-            slug="housing_property",
-            version=1,
-            defaults={
+        self.ensure_seed_question(
+            housing,
+            "housing_property",
+            {
                 "question_text": "Enter one researched rental property from your local housing market.",
                 "field_type": "housing",
                 "options_json": {},

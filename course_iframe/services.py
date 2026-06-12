@@ -1,9 +1,5 @@
-import hashlib
-import hmac
-import json
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
@@ -119,41 +115,6 @@ DEFAULT_HOUSING_FIELDS = [
 DEFAULT_HOUSING_X_AXIS = "rooms"
 DEFAULT_HOUSING_Y_AXIS = "monthly_rent"
 RENT_PER_SQM_KEY = "rent_per_sqm"
-
-
-def make_iframe_signature(course_id, participant_id):
-    message = json.dumps(
-        {
-            "participant_id": participant_id,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    secret = settings.IFRAME_SIGNING_SECRET.encode()
-    return hmac.new(secret, message, hashlib.sha256).hexdigest()
-
-
-def valid_iframe_signature(course_id, participant_id, signature):
-    if not participant_id or not signature:
-        return False
-    expected = make_iframe_signature(course_id, participant_id)
-    if hmac.compare_digest(expected, signature):
-        return True
-
-    legacy_message = json.dumps(
-        {
-            "course_id": course_id,
-            "participant_id": participant_id,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    legacy_expected = hmac.new(
-        settings.IFRAME_SIGNING_SECRET.encode(),
-        legacy_message,
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(legacy_expected, signature)
 
 
 def remember_participant(request, participant):

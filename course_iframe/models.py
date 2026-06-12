@@ -74,7 +74,12 @@ class Question(models.Model):
             models.UniqueConstraint(
                 fields=["activity", "slug", "version"],
                 name="unique_question_version_per_activity",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["activity", "slug"],
+                condition=models.Q(is_active=True),
+                name="unique_active_question_per_activity",
+            ),
         ]
         ordering = ["activity__slug", "slug", "-version"]
 

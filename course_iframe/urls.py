@@ -9,7 +9,6 @@ urlpatterns = [
     # via the embedded /iframe/<activity>/ URLs. Send the root to the login gate.
     # Temporary (302) so it stays easy to change later without browser caching.
     path("", RedirectView.as_view(pattern_name="research-login", permanent=False), name="root"),
-    path("iframe/", views.iframe_entry, name="iframe-entry"),
     path("iframe/<slug:activity_slug>/", views.activity_iframe_entry, name="activity-iframe-entry"),
     path("activities/", views.activity_landing, name="activity-landing"),
     path("activities/relationship/", views.relationship_activity, name="relationship-activity"),

@@ -60,7 +60,6 @@ from .services import (
     update_housing_visualization,
     update_relationship_display_mode,
     update_relationship_settings,
-    valid_iframe_signature,
 )
 
 
@@ -179,24 +178,6 @@ def healthz(request):
     except Exception:
         return JsonResponse({"status": "fail"}, status=503)
     return JsonResponse({"status": "ok"})
-
-
-@require_http_methods(["GET"])
-def iframe_entry(request):
-    course_id = request.GET.get("course_id", "").strip()
-    participant_id = request.GET.get("participant_id", "").strip()
-    signature = request.GET.get("sig", "").strip()
-    if not valid_iframe_signature(course_id, participant_id, signature):
-        return render(
-            request,
-            "course_iframe/iframe_error.html",
-            {"course_id": course_id, "participant_id": participant_id},
-            status=403,
-        )
-
-    participant = get_or_create_participant(participant_id)
-    remember_participant(request, participant)
-    return redirect("activity-landing")
 
 
 @require_http_methods(["GET", "POST"])

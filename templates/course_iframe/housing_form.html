@@ -105,35 +105,76 @@
     const list = wrapper.querySelector("[data-place-suggestions]");
     if (!input || !list) return;
 
-    const closeList = () => { list.hidden = true; list.innerHTML = ""; };
+    const listId = list.id || `${input.id || "place"}-suggestions`;
+    list.id = listId;
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-controls", listId);
+    input.setAttribute("aria-expanded", "false");
+
+    let currentResults = [];
+    let activeIndex = -1;
+
+    const setActiveIndex = index => {
+      const items = Array.from(list.querySelectorAll("[role='option']"));
+      activeIndex = items.length ? (index + items.length) % items.length : -1;
+      items.forEach((item, itemIndex) => {
+        const isActive = itemIndex === activeIndex;
+        item.setAttribute("aria-selected", String(isActive));
+        item.classList.toggle("is-active", isActive);
+      });
+      if (activeIndex >= 0) {
+        input.setAttribute("aria-activedescendant", items[activeIndex].id);
+      } else {
+        input.removeAttribute("aria-activedescendant");
+      }
+    };
+
+    const closeList = () => {
+      list.hidden = true;
+      list.innerHTML = "";
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      currentResults = [];
+      activeIndex = -1;
+    };
     const clearSelection = () => {
       osmTypeInput.value = "";
       osmIdInput.value = "";
       displayInput.value = "";
     };
 
+    const chooseResult = result => {
+      input.value = result.display_name;
+      osmTypeInput.value = result.osm_type;
+      osmIdInput.value = result.osm_id;
+      displayInput.value = result.display_name;
+      closeList();
+    };
+
     const renderResults = results => {
       list.innerHTML = "";
+      currentResults = results;
+      activeIndex = -1;
       if (!results.length) {
         closeList();
         return;
       }
-      results.forEach(result => {
+      results.forEach((result, index) => {
         const item = document.createElement("li");
         item.className = "place-suggestion";
         item.setAttribute("role", "option");
+        item.id = `${listId}-${index}`;
+        item.setAttribute("aria-selected", "false");
         item.textContent = result.display_name;
         item.addEventListener("mousedown", event => {
           event.preventDefault();
-          input.value = result.display_name;
-          osmTypeInput.value = result.osm_type;
-          osmIdInput.value = result.osm_id;
-          displayInput.value = result.display_name;
-          closeList();
+          chooseResult(result);
         });
         list.appendChild(item);
       });
       list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
     };
 
     const search = debounce(async query => {
@@ -152,6 +193,23 @@
     input.addEventListener("input", () => {
       clearSelection();
       search(input.value.trim());
+    });
+    input.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        closeList();
+        return;
+      }
+      if (list.hidden || !currentResults.length) return;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveIndex(activeIndex + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveIndex(activeIndex - 1);
+      } else if (event.key === "Enter" && activeIndex >= 0) {
+        event.preventDefault();
+        chooseResult(currentResults[activeIndex]);
+      }
     });
     input.addEventListener("blur", () => window.setTimeout(closeList, 120));
     input.addEventListener("focus", () => {

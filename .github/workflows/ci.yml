@@ -23,7 +23,6 @@ jobs:
         env:
           DJANGO_DEBUG: "1"
           DJANGO_SECRET_KEY: "ci-secret"
-          IFRAME_SIGNING_SECRET: "ci-secret"
           RESEARCH_ADMIN_PASSWORD: "ci-pass"
           NOMINATIM_VERIFY: "0"
         run: uv run python manage.py test course_iframe --verbosity=2

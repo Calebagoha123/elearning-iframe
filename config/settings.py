@@ -2,12 +2,13 @@ import json
 import logging
 import os
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+DEV_SECRET_KEY = "dev-insecure-change-me"
 
 
 def env_bool(name, default):
@@ -40,8 +41,36 @@ def default_cookie_samesite(debug):
     return "Lax" if debug else "None"
 
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-insecure-change-me")
+def require_production_secret(name, value, dev_default):
+    if DEBUG:
+        return
+    if not value or value == dev_default:
+        raise ImproperlyConfigured(
+            f"Set {name} to a unique secret before running production."
+        )
+
+
+def validate_production_password_hash(value):
+    """Catch copied/truncated researcher password hashes during startup."""
+    if DEBUG:
+        return
+    parts = (value or "").split("$")
+    if (
+        len(parts) != 4
+        or parts[0] != "pbkdf2_sha256"
+        or not parts[1].isdigit()
+        or not parts[2]
+        or not parts[3]
+    ):
+        raise ImproperlyConfigured(
+            "RESEARCH_ADMIN_PASSWORD_HASH must be a complete pbkdf2_sha256 hash "
+            "from manage.py hash_admin_password."
+        )
+
+
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
 DEBUG = env_bool("DJANGO_DEBUG", True)
+require_production_secret("DJANGO_SECRET_KEY", SECRET_KEY, DEV_SECRET_KEY)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 INSTALLED_APPS = [
@@ -99,20 +128,24 @@ def database_config():
 
     config = {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": parsed.path.lstrip("/"),
-        "USER": parsed.username or "",
-        "PASSWORD": parsed.password or "",
+        "NAME": unquote(parsed.path.lstrip("/")),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
         "HOST": parsed.hostname or "",
         "PORT": parsed.port or "",
     }
+    options = {
+        key: value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+    }
     if env_bool("DJANGO_DB_POOL", not env_bool("DJANGO_DEBUG", True)):
-        config["OPTIONS"] = {
-            "pool": {
-                "min_size": int(os.getenv("DJANGO_DB_POOL_MIN", "2")),
-                "max_size": int(os.getenv("DJANGO_DB_POOL_MAX", "8")),
-                "timeout": float(os.getenv("DJANGO_DB_POOL_TIMEOUT", "10")),
-            }
+        options["pool"] = {
+            "min_size": int(os.getenv("DJANGO_DB_POOL_MIN", "2")),
+            "max_size": int(os.getenv("DJANGO_DB_POOL_MAX", "8")),
+            "timeout": float(os.getenv("DJANGO_DB_POOL_TIMEOUT", "10")),
         }
+    if options:
+        config["OPTIONS"] = options
     return config
 
 
@@ -167,8 +200,13 @@ CSP_FRAME_ANCESTORS = env_frame_ancestors(
     "'self'",
 )
 X_FRAME_OPTIONS = "SAMEORIGIN"  # Django default; CSP frame-ancestors overrides in modern browsers
+SILENCED_SYSTEM_CHECKS = [
+    # The app is intentionally embedded in Moodle/LMS iframes. CSP frame-ancestors
+    # is the enforcement point; X-Frame-Options cannot express cross-origin
+    # allowlists and would block legitimate Moodle embeds in older browsers.
+    "security.W002",
+]
 
-IFRAME_SIGNING_SECRET = os.getenv("IFRAME_SIGNING_SECRET", "dev-iframe-secret")
 # Either a plaintext password (dev convenience) or a hashed string produced by
 # `manage.py hash_admin_password` (recommended for production). The login view
 # detects which form is in use.
@@ -178,6 +216,7 @@ if not DEBUG and not RESEARCH_ADMIN_PASSWORD_HASH:
     raise ImproperlyConfigured(
         "Set RESEARCH_ADMIN_PASSWORD_HASH in production. Generate it with manage.py hash_admin_password."
     )
+validate_production_password_hash(RESEARCH_ADMIN_PASSWORD_HASH)
 
 NOMINATIM_BASE_URL = os.getenv("NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org")
 NOMINATIM_USER_AGENT = os.getenv(

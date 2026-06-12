@@ -1,11 +1,21 @@
 from unittest.mock import patch
 
 from django.conf import settings
+from django.contrib.auth.hashers import make_password
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from config.settings import default_cookie_samesite, env_bool, env_frame_ancestors
+from config.settings import (
+    DEV_SECRET_KEY,
+    database_config,
+    default_cookie_samesite,
+    env_bool,
+    env_frame_ancestors,
+    require_production_secret,
+    validate_production_password_hash,
+)
 
 from .models import ExportLog, Participant, Question, Response
 from .services import (
@@ -18,7 +28,6 @@ from .services import (
     housing_raw_payloads,
     housing_scatter_config,
     housing_scatter_points,
-    make_iframe_signature,
     save_housing_response,
     save_relationship_response,
     relationship_color_map,
@@ -29,17 +38,15 @@ from .services import (
 
 
 @override_settings(
-    IFRAME_SIGNING_SECRET="test-secret",
     RESEARCH_ADMIN_PASSWORD="research-pass",
     NOMINATIM_VERIFY=False,
 )
 class IframeMvpTests(TestCase):
-    def iframe_url(self, participant_id="student-1"):
-        sig = make_iframe_signature("", participant_id)
-        return f"{reverse('iframe-entry')}?participant_id={participant_id}&sig={sig}"
-
     def enter_iframe(self, participant_id="student-1"):
-        return self.client.get(self.iframe_url(participant_id), follow=True)
+        return self.enter_activity_iframe(
+            RELATIONSHIP_SLUG,
+            pseudoname=participant_id,
+        )
 
     def activity_iframe_url(self, activity_slug=RELATIONSHIP_SLUG):
         return reverse("activity-iframe-entry", args=[activity_slug])
@@ -74,17 +81,6 @@ class IframeMvpTests(TestCase):
                     "size_sqm": None,
                 },
             )
-
-    def test_signed_iframe_entry_creates_session_participant(self):
-        response = self.enter_iframe()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Activities")
-        self.assertTrue(
-            Participant.objects.filter(
-                participant_id="student-1",
-            ).exists()
-        )
 
     def test_activity_iframe_entry_prompts_for_moodle_pseudoname(self):
         response = self.client.get(self.activity_iframe_url())
@@ -128,22 +124,12 @@ class IframeMvpTests(TestCase):
         self.assertContains(response, "Enter your Moodle pseudoname.")
         self.assertEqual(Participant.objects.count(), 0)
 
-    def test_invalid_iframe_signature_is_rejected(self):
+    def test_bare_iframe_entry_is_not_available(self):
         response = self.client.get(
-            f"{reverse('iframe-entry')}?participant_id=student-1&sig=bad"
+            "/iframe/?participant_id=student-1&sig=legacy-signature"
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(Participant.objects.count(), 0)
-
-    def test_iframe_signature_does_not_allow_participant_collision(self):
-        collision_signature = make_iframe_signature("", "student:1")
-
-        response = self.client.get(
-            f"{reverse('iframe-entry')}?participant_id=1&sig={collision_signature}"
-        )
-
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         self.assertEqual(Participant.objects.count(), 0)
 
     def relationship_formset_payload(self, rows):
@@ -241,13 +227,14 @@ class IframeMvpTests(TestCase):
             Response.objects.filter(participant=self.participant(), activity__slug=RELATIONSHIP_SLUG).exists()
         )
 
-    def test_relationship_form_hides_other_field_until_other_is_selected(self):
+    def test_relationship_form_progressively_enhances_other_field(self):
         self.enter_iframe()
 
         response = self.client.get(reverse("relationship-activity"))
 
-        self.assertContains(response, 'class="relationship-other is-hidden"', html=False)
+        self.assertContains(response, 'class="relationship-other"', html=False)
         self.assertContains(response, 'data-add-relationship', html=False)
+        self.assertNotContains(response, 'data-save-relationships disabled', html=False)
         self.assertContains(response, 'class="likert-scale"', html=False)
         self.assertContains(response, "Lower than theirs")
 
@@ -405,6 +392,38 @@ class IframeMvpTests(TestCase):
         response = self.client.get(reverse("research-relationship-plots"))
         self.assertContains(response, "No responses yet.")
         self.assertNotContains(response, "Friend")
+
+    def test_seed_mvp_does_not_reactivate_old_question_versions(self):
+        old_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+        self.client.post(reverse("research-login"), {"password": "research-pass"})
+
+        self.client.post(
+            reverse("research-edit-relationship"),
+            {
+                "question_text": "Updated relationship wording?",
+                "relationship_choices": "Friend\nParent\nSibling",
+                "likert_points": "3",
+                "label_3_lower": "Lower than theirs",
+                "label_3_same": "Same",
+                "label_3_higher": "Higher than theirs",
+            },
+        )
+        new_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+
+        call_command("seed_mvp")
+
+        old_question.refresh_from_db()
+        new_question.refresh_from_db()
+        self.assertFalse(old_question.is_active)
+        self.assertTrue(new_question.is_active)
+        self.assertEqual(
+            Question.objects.filter(
+                activity__slug=RELATIONSHIP_SLUG,
+                slug=RELATIONSHIP_QUESTION_SLUG,
+                is_active=True,
+            ).count(),
+            1,
+        )
 
     def test_relationship_display_mode_defaults_to_cohort(self):
         question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
@@ -587,12 +606,13 @@ class IframeMvpTests(TestCase):
         self.assertEqual(active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG).pk, question.pk)
         self.assertContains(response, "No changes to save.")
 
-    def test_research_edit_housing_save_starts_disabled(self):
+    def test_research_edit_housing_save_is_available_without_javascript(self):
         self.client.post(reverse("research-login"), {"password": "research-pass"})
 
         response = self.client.get(reverse("research-edit-housing"))
 
-        self.assertContains(response, 'data-save-changes disabled')
+        self.assertContains(response, 'data-save-changes')
+        self.assertNotContains(response, 'data-save-changes disabled')
 
     def test_research_plot_page_updates_axes_in_place(self):
         self.client.post(reverse("research-login"), {"password": "research-pass"})
@@ -1053,3 +1073,35 @@ class SettingsTests(SimpleTestCase):
     def test_test_environment_uses_http_compatible_cookies(self):
         self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")
         self.assertFalse(settings.SESSION_COOKIE_SECURE)
+
+    def test_production_secrets_reject_missing_or_dev_values(self):
+        with patch("config.settings.DEBUG", False):
+            with self.assertRaises(ImproperlyConfigured):
+                require_production_secret("DJANGO_SECRET_KEY", "", DEV_SECRET_KEY)
+            require_production_secret("DJANGO_SECRET_KEY", "custom-secret", DEV_SECRET_KEY)
+
+    def test_production_password_hash_rejects_malformed_hashes(self):
+        with patch("config.settings.DEBUG", False):
+            with self.assertRaises(ImproperlyConfigured):
+                validate_production_password_hash("dummy")
+            with self.assertRaises(ImproperlyConfigured):
+                validate_production_password_hash("pbkdf2_sha256$not-an-int$salt$value")
+            validate_production_password_hash(make_password("research-pass"))
+
+    def test_database_url_decodes_credentials_and_preserves_query_options(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "DATABASE_URL": "postgres://elearning:p%40ss%2Fword@db:5432/learning%20db?sslmode=require&connect_timeout=10",
+                "DJANGO_DB_POOL": "0",
+            },
+            clear=False,
+        ):
+            config = database_config()
+
+        self.assertEqual(config["ENGINE"], "django.db.backends.postgresql")
+        self.assertEqual(config["NAME"], "learning db")
+        self.assertEqual(config["USER"], "elearning")
+        self.assertEqual(config["PASSWORD"], "p@ss/word")
+        self.assertEqual(config["OPTIONS"]["sslmode"], "require")
+        self.assertEqual(config["OPTIONS"]["connect_timeout"], "10")
