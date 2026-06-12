@@ -71,17 +71,8 @@ Research team can normally:
 - export CSV files
 - edit activity wording/schema after agreeing the change with the project lead
 
-Technical support should own:
-
-- Docker and server maintenance
-- `.env.production` changes
-- DNS, HTTPS, Caddy, and Moodle iframe/CSP configuration
-- backups, restores, and database shell work
-- password and secret rotation
-- dependency updates and deployments
-
 Moodle/LMS administrators need to provide the Moodle origin, for example
-`https://moodle.example.edu`, so technical support can set
+`https://moodle.example.edu`, to set
 `DJANGO_CSP_FRAME_ANCESTORS`.
 
 ## Data, Backups, And Retention
