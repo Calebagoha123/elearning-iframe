@@ -161,8 +161,19 @@ loss.
 
 ## Production Operations
 
-Run production commands on the Hetzner server from the directory containing
-`docker-compose.prod.yml`.
+The current Hetzner VM is `inequality-education` at `178.105.171.222`. The app is
+served at <https://inequality-perception.de>.
+
+Connect from your computer, then enter the checkout:
+
+```bash
+ssh root@178.105.171.222
+cd /opt/elearning-iframe
+```
+
+Run production commands from this directory, which contains
+`docker-compose.prod.yml`. SSH authentication is managed separately; do not store
+server passwords or private keys in this repository.
 
 Most commands need this full compose prefix:
 
