@@ -1,0 +1,7 @@
+<nav class="activity-nav" aria-label="Activity pages">
+  <a href="{{ activity_responses_url }}"{% if request.path == activity_responses_url %} aria-current="page"{% endif %}>Responses</a>
+  <a href="{{ activity_edit_url }}"{% if request.path == activity_edit_url %} aria-current="page"{% endif %}>Edit activity</a>
+  <a href="{{ activity_plots_url }}"{% if request.path == activity_plots_url %} aria-current="page"{% endif %}>View plots</a>
+  <a class="external-link" href="{{ activity_preview_url }}" target="_blank" rel="noopener" title="Open student preview in a new tab"><span class="external-link__label">Student preview</span><span class="external-link__arrow" aria-hidden="true">↗</span></a>
+  <a href="{% url 'research-export-csv' %}?activity={{ activity.slug }}" class="activity-nav__export">Download CSV</a>
+</nav>

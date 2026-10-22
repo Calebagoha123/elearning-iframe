@@ -12,7 +12,6 @@ from config.settings import (
     database_config,
     default_cookie_samesite,
     env_bool,
-    env_frame_ancestors,
     require_production_secret,
     validate_production_password_hash,
 )
@@ -390,8 +389,9 @@ class IframeMvpTests(TestCase):
         self.assertEqual(Response.objects.filter(question=old_question).count(), 2)
 
         response = self.client.get(reverse("research-relationship-plots"))
-        self.assertContains(response, "No responses yet.")
-        self.assertNotContains(response, "Friend")
+        self.assertContains(response, "No answers yet.")
+        self.assertEqual(response.context["response_count"], 0)
+        self.assertTrue(all(row["count"] == 0 for chart in response.context["distributions"] for row in chart["rows"]))
 
     def test_seed_mvp_does_not_reactivate_old_question_versions(self):
         old_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
@@ -506,8 +506,8 @@ class IframeMvpTests(TestCase):
         self.client.post(reverse("research-login"), {"password": "research-pass"})
 
         response = self.client.get(reverse("research-relationship-plots"))
-        self.assertContains(response, "Preview a respondent")
-        self.assertContains(response, "relationship-participant-stacks")
+        self.assertContains(response, "Highlight a respondent")
+        self.assertEqual(response.context["focus_choices"], ["student-a"])
         self.assertContains(response, "student-a")
 
     def housing_form_payload(self, district="North Berlin", rent="1200.00", rooms="2", size=""):
@@ -711,8 +711,8 @@ class IframeMvpTests(TestCase):
         self.assertContains(response, "<strong>2</strong>", html=True)
         self.assertContains(response, reverse("research-edit-relationship"))
         self.assertContains(response, reverse("research-edit-housing"))
-        self.assertContains(response, reverse("research-relationship-plots"))
-        self.assertContains(response, reverse("research-housing-plots"))
+        self.assertContains(response, reverse("research-activity-responses", args=[RELATIONSHIP_SLUG]))
+        self.assertContains(response, reverse("research-activity-responses", args=[HOUSING_SLUG]))
 
     def test_research_plot_pages_show_cohort_results(self):
         self.add_relationship_responses(2)
@@ -722,10 +722,12 @@ class IframeMvpTests(TestCase):
         relationship = self.client.get(reverse("research-relationship-plots"))
         housing = self.client.get(reverse("research-housing-plots"))
 
-        self.assertContains(relationship, "Relationship results")
+        self.assertContains(relationship, "Relationship survey")
         self.assertContains(relationship, "Friend")
-        self.assertContains(housing, "Housing comparison")
-        self.assertContains(housing, "data-scatter-toggle")
+        self.assertContains(housing, "Housing data entry")
+        self.assertContains(housing, "data-flexible-scatter")
+        self.assertTemplateUsed(relationship, "research/flexible_plots.html")
+        self.assertTemplateUsed(housing, "research/flexible_plots.html")
 
     def test_housing_raw_payloads_hide_identity_unless_requested(self):
         self.add_housing_responses(2)
@@ -746,7 +748,8 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("research-housing-plots"))
         self.assertContains(response, "Highlight a respondent")
-        self.assertContains(response, '"participant_id"')  # identity present in the payload JSON
+        self.assertEqual(response.context["focus_choices"], ["student-0", "student-1"])
+        self.assertTrue(all("participant_id" not in point for point in response.context["scatter_points"]))
         self.assertContains(response, "student-1")
 
     def test_student_housing_results_do_not_leak_other_pseudonames(self):
@@ -1055,20 +1058,6 @@ class SettingsTests(SimpleTestCase):
     def test_cookie_samesite_default_matches_http_local_and_https_iframe_modes(self):
         self.assertEqual(default_cookie_samesite(debug=True), "Lax")
         self.assertEqual(default_cookie_samesite(debug=False), "None")
-
-    def test_frame_ancestors_accepts_space_or_comma_separated_origins(self):
-        with patch.dict(
-            "os.environ",
-            {"FRAME_ANCESTORS_FOR_TEST": "https://moodle.example.edu, https://lms.example.edu https://embed.example.edu"},
-        ):
-            self.assertEqual(
-                env_frame_ancestors("FRAME_ANCESTORS_FOR_TEST", "'self'"),
-                [
-                    "https://moodle.example.edu",
-                    "https://lms.example.edu",
-                    "https://embed.example.edu",
-                ],
-            )
 
     def test_test_environment_uses_http_compatible_cookies(self):
         self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")

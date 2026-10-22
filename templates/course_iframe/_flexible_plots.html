@@ -1,0 +1,35 @@
+{% load static %}
+{% for card in plot_cards %}
+<section class="panel chart-panel" id="chart-{{ card.id }}">
+  <header class="chart-card__head">
+    <h2>{{ card.title }}</h2>
+    {% if is_research_view and not preview_only %}
+    <form method="post" class="chart-visibility" data-chart-visibility>
+      {% csrf_token %}<input type="hidden" name="question_id" value="{{ question.pk }}"><input type="hidden" name="visibility_chart_id" value="{{ card.id }}">
+      <label><input type="checkbox" name="student_visible" value="1"{% if card.student_visible %} checked{% endif %}> Show to students<span class="sr-only">: {{ card.title }}</span></label>
+      <noscript><button type="submit" class="text-link">Save</button></noscript>
+    </form>
+    {% endif %}
+  </header>
+  {% if card.synthetic %}<p class="muted chart-example-label">Synthetic examples · No answers for this chart yet</p>{% endif %}
+  {% if card.kind == 'scatter' %}
+    <div class="scatter-plot" data-flexible-scatter data-points-id="{{ card.data_id }}" data-x-label="{{ card.data.x_label }}" data-y-label="{{ card.data.y_label }}"><svg viewBox="0 0 720 460" role="img" aria-label="{{ card.title }}"></svg></div>
+    {{ card.data.points|json_script:card.data_id }}
+    {% if not card.data.points %}<p class="muted">No entries with values for both axes yet.</p>{% endif %}
+    {% if participant and not card.synthetic %}<p class="muted">Purple points show the cohort. Gold points show {% if is_research_view %}the selected participant’s{% else %}your{% endif %} entries.</p>{% endif %}
+  {% elif card.kind == 'stacked' %}
+    <div class="flexible-distribution">{% for row in card.data.rows %}<div class="distribution-row"><span>{{ row.label }}</span><div class="flexible-stack">{% for segment in row.segments %}{% if segment.count %}<span style="width: {{ segment.percent }}%; background: {{ segment.color }}" title="{{ segment.label }}: {{ segment.count }}">{{ segment.count }}</span>{% endif %}{% endfor %}</div><strong>{{ row.total }}</strong></div>{% endfor %}</div>
+    <ul class="chart-legend">{% for item in card.data.legend %}<li><span class="chart-legend__swatch" style="background: {{ item.color }}"></span>{{ item.label }}</li>{% empty %}<li>No answers yet.</li>{% endfor %}</ul>
+  {% elif card.kind == 'distribution' %}
+    <div class="flexible-distribution">{% for row in card.data.rows %}<div class="distribution-row"><span>{{ row.label }}</span><div class="distribution-track"><span style="width: {{ row.percent }}%"></span></div><strong>{{ row.count }}</strong>{% if participant and not card.synthetic %}<small>{{ row.yours }} {% if is_research_view %}selected{% else %}yours{% endif %}</small>{% endif %}</div>{% endfor %}</div>
+    <p class="muted">{{ card.data.total }} answers</p>
+  {% elif card.kind == 'numeric' %}
+    {% if card.data.count %}<p class="muted">{{ card.data.count }} answers · Mean {{ card.data.mean }} · Range {{ card.data.minimum }}–{{ card.data.maximum }}</p>{% endif %}
+    <div class="flexible-distribution">{% for row in card.data.rows %}<div class="distribution-row"><span>{{ row.label }}</span><div class="distribution-track"><span style="width: {{ row.percent }}%"></span></div><strong>{{ row.count }}</strong></div>{% empty %}<p class="muted">No numeric answers yet.</p>{% endfor %}</div>
+  {% elif card.kind == 'word_cloud' %}
+    <div class="word-cloud">{% for word in card.data.words %}<span style="font-size: {{ word.size }}rem">{{ word.label }} <small>{{ word.count }}</small></span>{% empty %}<p class="muted">No text answers yet.</p>{% endfor %}</div>
+  {% endif %}
+</section>
+{% empty %}<section class="panel"><p class="muted">{% if is_research_view %}No compatible charts yet. Add questions to build charts for this activity.{% else %}No charts have been shared for this activity yet.{% endif %}</p></section>{% endfor %}
+<script src="{% static 'js/flexible_plots.js' %}" defer></script>
+{% if is_research_view %}<script src="{% static 'js/chart_visibility.js' %}" defer></script>{% endif %}

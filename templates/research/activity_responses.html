@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ activity.title }} · Responses{% endblock %}
+{% block content %}
+<header class="topbar"><div><p class="eyebrow">Researcher · {{ activity.title }}</p><h1>Responses</h1></div><a class="text-link" href="{% url 'research-dashboard' %}">← Dashboard</a></header>
+{% include "research/_activity_nav.html" %}
+<form method="get" class="panel response-filters">
+  <label for="participant-search">Participant pseudoname<input id="participant-search" name="participant" value="{{ participant_search }}" placeholder="Search pseudonames"></label>
+  <label for="versions">Activity versions<select id="versions" name="versions"><option value="current"{% if not all_versions %} selected{% endif %}>Current activity version · {{ question.version }}</option><option value="all"{% if all_versions %} selected{% endif %}>All versions</option></select></label>
+  <button class="button button-small" type="submit">Apply filters</button>
+</form>
+<section class="panel">
+  <div class="panel-heading"><h2>{{ page.paginator.count }} response{{ page.paginator.count|pluralize }}</h2><span class="muted">{% if all_versions %}All activity versions{% else %}Current activity version{% endif %}</span></div>
+  {% for row in rows %}
+  <article class="response-review-row">
+    <header><strong>{{ row.response.participant.participant_id }}</strong><small class="muted">{{ row.response.created_at|date:"d M Y H:i" }} · Activity version {{ row.response.question_version }}{% if not row.response.question.is_active %} · Earlier version{% endif %}</small></header>
+    <p class="muted">{{ row.response.question.question_text }}</p>
+    <dl class="response-values">{% for answer in row.answers %}<div><dt>{{ answer.label }} <small>Question v{{ answer.version|default:1 }}</small></dt><dd>{{ answer.value|default_if_none:"—" }}</dd></div>{% endfor %}</dl>
+  </article>
+  {% empty %}<p class="muted">No responses match these filters. Student submissions will appear here.</p>{% endfor %}
+  {% if page.has_other_pages %}<nav class="form-actions" aria-label="Response pages">{% if page.has_previous %}<a href="{% querystring page=page.previous_page_number %}">← Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="{% querystring page=page.next_page_number %}">Next →</a>{% endif %}</nav>{% endif %}
+</section>
+{% endblock %}

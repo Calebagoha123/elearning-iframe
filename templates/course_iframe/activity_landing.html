@@ -12,39 +12,12 @@
 </header>
 
 <section class="activity-list">
+  {% for activity in activities %}
   <article class="activity-row">
-    <div>
-      <p class="eyebrow">Activity 1</p>
-      <h2>Relationship survey</h2>
-      <p class="muted">Answer one question, then view the cohort response pattern when enough submissions are available.</p>
-    </div>
-    <div class="row-actions">
-      <span class="status">{% if relationship_done %}Saved{% else %}Not started{% endif %}</span>
-      <a class="button" href="{% url 'relationship-activity' %}">Open</a>
-    </div>
+    <div><p class="eyebrow">Activity {{ forloop.counter }}</p><h2>{{ activity.title }}</h2><p class="muted">{{ activity.description|truncatewords:40 }}</p></div>
+    <div class="row-actions"><span class="status">{{ activity.saved_count }} saved</span><a class="button" href="{% url 'activity-student' activity.slug %}">Open</a><a class="text-link" href="{% url 'activity-results' activity.slug %}">Results</a></div>
   </article>
-
-  <article class="activity-row">
-    <div>
-      <p class="eyebrow">Activity 2</p>
-      <h2>Housing data entry</h2>
-      <p class="muted">Log researched rental properties and compare your entries with the course average.</p>
-    </div>
-    <div class="row-actions">
-      <span class="status">{{ housing_count }} saved</span>
-      <a class="button" href="{% url 'housing-activity' %}">Open</a>
-    </div>
-  </article>
-
-  <article class="activity-row">
-    <div>
-      <p class="eyebrow">Summary</p>
-      <h2>Your results</h2>
-      <p class="muted">See your relationship and housing responses together, alongside the cohort.</p>
-    </div>
-    <div class="row-actions">
-      <a class="button button-secondary" href="{% url 'student-summary' %}">View</a>
-    </div>
-  </article>
+  {% endfor %}
+  <article class="activity-row"><div><p class="eyebrow">Summary</p><h2>Your results</h2></div><a class="button button-secondary" href="{% url 'student-summary' %}">View</a></article>
 </section>
 {% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}New activity{% endblock %}
+{% block content %}
+<header class="topbar"><div><p class="eyebrow">Researcher · Course activities</p><h1>New activity</h1></div><a class="text-link" href="{% url 'research-dashboard' %}">← Dashboard</a></header>
+<form method="post" class="panel form-stack new-course-activity">
+  {% csrf_token %}{{ form.non_field_errors }}
+  <p class="muted">Name your activity, then add questions and sections. You can combine different answer types and let students add multiple entries wherever needed.</p>
+  {% for field in form %}<div class="builder-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
+  <div class="form-actions"><button class="button" type="submit">Create activity</button></div>
+</form>
+{% endblock %}

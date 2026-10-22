@@ -1,6 +1,6 @@
 <section class="panel chart-panel">
   <div class="panel-heading">
-    <h2>Income comparison by relationship</h2>
+    <h2>{{ comparison_chart_title }}</h2>
   </div>
 
   {% if is_research_view %}
@@ -49,7 +49,7 @@
   <p class="muted segmented-chart-empty" data-segmented-empty hidden>No responses to chart yet.</p>
 
   {% if segmented_legend %}
-    <ul class="chart-legend chart-legend--interactive" aria-label="Toggle relationships in the chart">
+    <ul class="chart-legend chart-legend--interactive" aria-label="Toggle categories in the chart">
       {% for item in segmented_legend %}
         <li>
           <button class="chart-legend__toggle is-active" type="button" data-relationship-toggle="{{ item.label }}" aria-pressed="true">

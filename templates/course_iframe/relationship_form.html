@@ -1,19 +1,23 @@
 {% extends "base.html" %}
 
-{% block title %}Relationship survey{% endblock %}
+{% block title %}{{ activity.title }}{% endblock %}
 
 {% block content %}
 <header class="topbar">
   <div>
-    <p class="eyebrow">Activity 1</p>
-    <h1>Relationship survey</h1>
+    <p class="eyebrow">Course activity</p>
+    <h1>{{ activity.title }}</h1>
   </div>
-  <p class="identity">ID {{ participant.participant_id }}</p>
+  {% if participant %}<p class="identity">ID {{ participant.participant_id }}</p>{% endif %}
 </header>
+{% if preview %}<p class="message">Student preview · Changes here are not saved. <a href="{{ activity_edit_url }}">Back to editor</a></p>{% endif %}
+{% if activity.description %}<div class="activity-instructions">{{ activity.description|linebreaks }}</div>{% endif %}
+
 
 <section class="panel">
-  <form method="post" class="form-stack" data-relationship-form>
+  <form method="post" {% if preview %}onsubmit="return false"{% endif %} class="form-stack" data-relationship-form>
     {% csrf_token %}
+    <input type="hidden" name="question_id" value="{{ question.pk }}">
     {{ formset.management_form }}
     <fieldset class="relationship-fieldset">
       <legend>{{ question.question_text }}</legend>
@@ -52,7 +56,7 @@
     </fieldset>
     <div class="form-actions">
       <button class="button button-secondary" type="button" data-add-relationship aria-label="Add relationship">+ Add relationship</button>
-      <button class="button" type="submit" data-save-relationships>Save responses</button>
+      <button class="button" type="submit" data-save-relationships{% if preview %} hidden disabled{% endif %}>Save responses</button>
     </div>
   </form>
 </section>
@@ -108,7 +112,7 @@
 
     function updateSaveState() {
       const hasRelationship = Array.from(rows.querySelectorAll("[data-relationship-row]")).some(rowHasRelationship);
-      saveButton.disabled = !hasRelationship;
+      saveButton.disabled = !hasRelationship || form.hasAttribute("onsubmit");
     }
 
     function reindexRows() {

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Housing comparison{% endblock %}
+{% block title %}{% if activity.slug == "housing" %}Housing comparison{% else %}{{ activity.title }} · Results{% endif %}{% endblock %}
 
 {% block content %}
 <header class="topbar">
@@ -10,17 +10,19 @@
     {% else %}
       <p class="eyebrow">Activity 2</p>
     {% endif %}
-    <h1>Housing comparison</h1>
+    <h1>{{ activity.title }} · Results</h1>
   </div>
   {% if is_research_view %}
     <a class="text-link" href="{% url 'research-dashboard' %}">&larr; Dashboard</a>
   {% else %}
     <div class="topbar-meta">
       <p class="identity">ID {{ participant.participant_id }}</p>
-      <a class="button button-secondary" href="{% url 'housing-activity' %}">Add another entry</a>
+      <a class="button button-secondary" href="{{ activity_form_url }}">Add another entry</a>
     </div>
   {% endif %}
 </header>
+
+{% if is_research_view %}<nav class="form-actions"><a class="button button-secondary" href="{{ activity_responses_url }}">Review responses</a><a class="text-link" href="{{ activity_edit_url }}">Edit activity</a></nav>{% endif %}
 
 {% include "course_iframe/_housing_chart.html" %}
 {% endblock %}

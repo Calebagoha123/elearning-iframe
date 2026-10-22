@@ -39,7 +39,7 @@ class Command(BaseCommand):
         active_questions.exclude(pk=keep.pk).update(is_active=False)
 
     def handle(self, *args, **options):
-        relationship, _ = Activity.objects.update_or_create(
+        relationship, _ = Activity.objects.get_or_create(
             slug="relationship",
             defaults={
                 "title": "Relationship survey",
@@ -57,7 +57,7 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        housing, _ = Activity.objects.update_or_create(
+        housing, _ = Activity.objects.get_or_create(
             slug="housing",
             defaults={
                 "title": "Housing data entry",

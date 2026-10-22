@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ activity.title }} · Plots{% endblock %}
+{% block content %}
+<header class="topbar"><div><p class="eyebrow">Researcher · {{ activity.title }}</p><h1>Plots</h1></div><a class="text-link" href="{% url 'research-dashboard' %}">← Dashboard</a></header>
+{% include "research/_activity_nav.html" %}
+<div class="plot-workspace">
+  <aside class="panel plot-builder">
+    <h2>Plot builder</h2>
+    <p class="muted">Build charts for this activity. Check Show to students on any saved chart to share it.</p>
+    <form method="post" class="form-stack" data-plot-builder>
+      {% csrf_token %}{{ plot_form.non_field_errors }}
+      <input type="hidden" name="question_id" value="{{ question.pk }}">
+      <input type="hidden" name="highlight" value="{{ highlight_name }}">
+      <label for="{{ plot_form.section.id_for_label }}">Section{{ plot_form.section }}{{ plot_form.section.errors }}</label>
+      <label for="{{ plot_form.chart_type.id_for_label }}">Chart type{{ plot_form.chart_type }}{{ plot_form.chart_type.errors }}</label>
+      <p class="plot-help muted" data-plot-help></p>
+      <div data-plot-question><label for="{{ plot_form.question.id_for_label }}">Question{{ plot_form.question }}{{ plot_form.question.errors }}</label></div>
+      <fieldset class="form-stack" data-scatter-settings><legend>Numeric questions</legend>
+        <label for="{{ plot_form.x.id_for_label }}">X axis{{ plot_form.x }}{{ plot_form.x.errors }}</label>
+        <label for="{{ plot_form.x_denominator.id_for_label }}">Divide X by (optional){{ plot_form.x_denominator }}{{ plot_form.x_denominator.errors }}</label>
+        <label for="{{ plot_form.y.id_for_label }}">Y axis{{ plot_form.y }}{{ plot_form.y.errors }}</label>
+        <label for="{{ plot_form.y_denominator.id_for_label }}">Divide Y by (optional){{ plot_form.y_denominator }}{{ plot_form.y_denominator.errors }}</label>
+      </fieldset>
+      <fieldset class="form-stack" data-stacked-settings><legend>Comparison questions</legend>
+        <label for="{{ plot_form.category.id_for_label }}">Categories{{ plot_form.category }}{{ plot_form.category.errors }}</label>
+        <label for="{{ plot_form.scale.id_for_label }}">Likert scale{{ plot_form.scale }}{{ plot_form.scale.errors }}</label>
+      </fieldset>
+      <div class="plot-builder-actions"><button class="button button-secondary button-small" type="submit" name="preview" value="1">Preview</button><button class="button button-small" type="submit" name="add_chart" value="1">Add chart</button></div>
+      <small>Preview uses collected answers where available and generates examples for unanswered questions. Add chart keeps it in your workspace; check Show to students to share it.</small>
+    </form>
+  </aside>
+  <section class="plot-preview" aria-label="Chart preview">
+    <header class="plot-preview-header"><div><h2>{% if preview_only %}Unsaved chart preview{% else %}Researcher view{% endif %}</h2><p class="muted">{{ participant_count }} {% if using_synthetic %}example participants{% else %}participants{% endif %} · {{ response_count }} {% if using_synthetic %}generated entries{% else %}entries{% endif %} · Activity version {{ question.version }}</p></div></header>
+    {% if preview_only %}<a class="text-link preview-return" href="{{ activity_plots_url }}">← Back to saved charts</a><p class="message">Preview only.{% if has_synthetic %} Unanswered questions use synthetic examples, labelled on each chart.{% endif %} Add chart to keep this configuration.</p>{% endif %}
+    {% if not preview_only %}<p class="muted">All saved charts are shown here. Students see only the charts checked Show to students, using collected responses.</p>{% endif %}
+    {% if focus_choices and not preview_only %}<form method="get" class="plot-highlight"><label for="plot-highlight">Highlight a respondent<select id="plot-highlight" name="highlight"><option value="">None · cohort only</option>{% for name in focus_choices %}<option value="{{ name }}"{% if name == highlight_name %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label><button class="button button-secondary button-small" type="submit">Highlight</button></form>{% endif %}
+    {% include "course_iframe/_flexible_plots.html" %}
+  </section>
+</div>
+{{ plot_fields|json_script:"plot-field-catalog" }}
+<script src="{% static 'js/plot_builder.js' %}" defer></script>
+{% endblock %}

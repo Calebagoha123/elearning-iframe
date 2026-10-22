@@ -35,13 +35,17 @@ class RelationshipForm(forms.Form):
         required=False,
     )
 
-    def __init__(self, *args, choices=None, income_choices=None, **kwargs):
+    def __init__(self, *args, choices=None, income_choices=None, labels=None, **kwargs):
         super().__init__(*args, **kwargs)
+        labels = labels or {}
+        self.fields["relationship"].label = labels.get("item_label", "Relationship")
+        self.fields["income_comparison"].label = labels.get("comparison_label", "Your income")
+        self.fields["other_relationship"].label = "Other " + labels.get("item_label", "relationship").lower()
         base_choices = [(choice["value"], choice["label"]) for choice in choices or []]
-        self.fields["relationship"].choices = [("", "Select a relationship")] + base_choices + [("other", "Other")]
+        self.fields["relationship"].choices = [("", "Select a " + self.fields["relationship"].label.lower())] + base_choices + [("other", "Other")]
         self.fields["income_comparison"].choices = list(income_choices or [])
         self.fields["relationship"].widget.attrs["data-relationship-select"] = ""
-        self.fields["other_relationship"].widget.attrs["placeholder"] = "Describe the relationship"
+        self.fields["other_relationship"].widget.attrs["placeholder"] = "Describe the " + self.fields["relationship"].label.lower()
 
     def clean(self):
         cleaned = super().clean()
@@ -291,7 +295,7 @@ class ResearchLoginForm(forms.Form):
 
 class RelationshipSettingsForm(forms.Form):
     income_likert_points = forms.ChoiceField(
-        label="Income scale",
+        label="Comparison scale",
         choices=[
             (3, "3 point"),
             (5, "5 point"),
@@ -306,12 +310,12 @@ class RelationshipEditForm(forms.Form):
         widget=forms.Textarea(attrs={"rows": 3}),
     )
     relationship_choices = forms.CharField(
-        label="Relationship options",
+        label="Categories",
         help_text="Enter one option per line. Other is added automatically.",
         widget=forms.Textarea(attrs={"rows": 8}),
     )
     likert_points = forms.ChoiceField(
-        label="Income scale",
+        label="Comparison scale",
         choices=[
             ("3", "3 point"),
             ("5", "5 point"),
@@ -319,11 +323,19 @@ class RelationshipEditForm(forms.Form):
         ],
     )
 
+    item_label = forms.CharField(label="Category input label", max_length=120, required=False)
+    comparison_label = forms.CharField(label="Comparison input label", max_length=120, required=False)
+
     def __init__(self, *args, question=None, **kwargs):
         from .services import LIKERT_CHOICES, relationship_likert_points
         super().__init__(*args, **kwargs)
         self.question = question
         self._likert_definitions = LIKERT_CHOICES
+        options = question.options_json if question else {}
+        self._input_labels = {"item_label": options.get("item_label", "Relationship"), "comparison_label": options.get("comparison_label", "Your income")}
+        for key, value in self._input_labels.items():
+            self.fields[key].initial = value
+
 
         saved_labels = {}
         self._existing_choice_values = {}
@@ -427,6 +439,8 @@ class RelationshipEditForm(forms.Form):
         if self.question is None:
             return True
         options = self.question.options_json or {}
+        if self.input_labels_for_save() != self._input_labels:
+            return True
         if self.cleaned_data["question_text"] != self.question.question_text:
             return True
         if self.relationship_choices_for_save() != list(options.get("choices", [])):
@@ -440,6 +454,9 @@ class RelationshipEditForm(forms.Form):
         for key, default_label in self._likert_definitions[selected_points]:
             current_labels[key] = saved_labels.get(key, default_label)
         return self.labels_for_selected_scale() != current_labels
+
+    def input_labels_for_save(self):
+        return {key: self.cleaned_data.get(key) or value for key, value in self._input_labels.items()}
 
     def label_field_groups(self):
         groups = []
@@ -640,3 +657,11 @@ class ExportFilterForm(forms.Form):
     )
     date_start = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     date_end = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .models import Activity
+
+        self.fields["activity"].choices = [("", "All activities")] + list(
+            Activity.objects.filter(deleted_at__isnull=True).values_list("slug", "title")
+        )

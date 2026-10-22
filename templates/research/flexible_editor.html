@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Edit {{ activity.title }}{% endblock %}
+{% block content %}
+<header class="topbar"><div><p class="eyebrow">Researcher · Activity builder</p><h1>{{ activity.title }}</h1></div><a class="text-link" href="{% url 'research-dashboard' %}">← Dashboard</a></header>
+{% include "research/_activity_nav.html" %}
+
+<form method="post" class="form-stack" data-schema-editor>
+  {% csrf_token %}
+  <section class="panel form-stack">{% include "research/_activity_settings.html" %}</section>
+  {{ schema_form.schema }}
+  {% if schema_form.errors %}<div class="message message-error" role="alert">{{ schema_form.errors }}</div>{% endif %}
+  <section aria-labelledby="questions-heading">
+    <div class="builder-section-heading"><h2 id="questions-heading">Questions and sections</h2><button class="button button-secondary button-small" type="button" data-add-section>+ Add section</button></div>
+    <p class="muted">Group questions into sections. Each section can be answered once, or repeated as many entries as the student needs.</p>
+    <div data-builder-sections class="form-stack"></div>
+    <div class="builder-empty" data-builder-empty><p>No questions yet.</p><button type="button" class="button" data-first-question>+ Add your first question</button></div>
+  </section>
+  <div class="builder-save-bar"><p class="muted">Saving a changed question automatically creates its next version. Earlier responses keep their original wording.</p><button class="button" type="submit" data-save-changes>Save activity</button></div>
+  <noscript><p class="message message-error">Enable JavaScript to build and reorder questions.</p></noscript>
+</form>
+<template id="builder-section-template">
+<section class="panel builder-section" data-builder-section>
+  <header class="builder-section-heading"><h3>Section <span data-section-number></span></h3><div class="row-actions"><button type="button" class="icon-button" data-action="section-up" aria-label="Move section up">↑</button><button type="button" class="icon-button" data-action="section-down" aria-label="Move section down">↓</button><button type="button" class="builder-remove text-link" data-action="section-remove">Remove section</button></div></header>
+  <div class="builder-section-settings">
+    <div class="builder-field"><label data-section-label="title">Section title (optional)</label><input data-section-property="title" maxlength="160"></div>
+    <div class="builder-field"><label data-section-label="instructions">Instructions (optional)</label><textarea data-section-property="instructions" rows="2" maxlength="4000"></textarea></div>
+    <label class="builder-check"><input type="checkbox" data-section-property="repeatable"><span>Let students add multiple entries for this section</span></label>
+    <div class="builder-field" data-repeat-setting><label data-section-label="add_label">“Add another” button text</label><input data-section-property="add_label" maxlength="100" placeholder="Add another entry"></div>
+  </div>
+  <ol class="builder-question-list" data-question-list></ol>
+  <button type="button" class="button button-secondary button-small" data-action="question-add">+ Add question</button>
+</section>
+</template>
+<template id="builder-question-template">
+<li class="builder-question" data-question>
+  <header class="builder-section-heading"><strong>Question <span data-question-number></span> <small class="question-version" data-question-version>Version 1</small></strong><div class="row-actions"><button type="button" class="icon-button" data-action="question-up" aria-label="Move question up">↑</button><button type="button" class="icon-button" data-action="question-down" aria-label="Move question down">↓</button><button type="button" class="icon-button question-trash" data-action="question-remove" aria-label="Delete question" title="Delete question"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button></div></header>
+  <div class="builder-question-fields">
+    <div class="builder-field"><label data-field-label="label">Question</label><textarea data-field-property="label" rows="2" maxlength="500" placeholder="What would you like to ask?"></textarea></div>
+    <div class="builder-field"><label data-field-label="type">Answer type</label><select data-field-property="type"></select></div>
+    <div class="builder-field"><label data-field-label="help_text">Hint (optional)</label><input data-field-property="help_text" maxlength="1000"></div>
+    <label class="builder-check"><input type="checkbox" data-field-property="required"><span>Answer required</span></label>
+    <div class="builder-field" data-likert-settings><label data-field-label="points">Scale points</label><input type="number" min="3" max="11" data-field-property="points"></div>
+    <div class="builder-field" data-choice-settings><label data-field-label="options">Answer options / scale labels</label><textarea data-field-property="options" rows="4" placeholder="One option per line"></textarea><small>One label per line, in the order students should see them.</small></div>
+    <label class="builder-check" data-other-setting><input type="checkbox" data-field-property="allow_other"><span>Include “Other” with a text answer</span></label>
+    <div class="builder-field" data-numeric-settings><label data-field-label="min_value">Minimum value (optional)</label><input type="number" step="any" data-field-property="min_value"></div>
+  </div>
+</li>
+</template>
+{{ builder_schema|json_script:"builder-schema" }}
+{{ field_types|json_script:"builder-field-types" }}
+<script src="{% static 'js/flexible_editor.js' %}" defer></script>
+{% endblock %}

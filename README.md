@@ -42,6 +42,7 @@ Researchers log in at `/research/login/` and use the dashboard to:
 - view participant and response counts
 - edit relationship-survey wording, relationship options, and income scale
 - edit the housing activity fields
+- create, preview, publish, and close custom activities with your own questions
 - view cohort plots
 - export CSV data, optionally filtered by activity and date
 - see recent export records
@@ -49,15 +50,79 @@ Researchers log in at `/research/login/` and use the dashboard to:
 Treat CSV exports as sensitive research data. They include pseudonames and
 individual response rows.
 
+### Creating Activities
+
+The dashboard lists all course activities together, including Housing data entry
+and Relationship survey. Click an activity card to open its responses, then use
+the shared navigation to move between responses, editing, plots, and student
+preview. Pencil and trash icons sit at the top right of each card. Student
+previews open in a new tab. Unpublished activities appear grey in the dashboard.
+
+Choose **+ New activity**, enter a title and course instructions, and create a
+draft. Its Moodle URL is generated automatically and stays fixed when the title
+changes. There is no activity format to choose.
+
+The shared builder supports any combination of:
+
+- short or long free response
+- single or multiple choice, with an optional “Other” text answer
+- Likert scales with 3–11 custom labels
+- whole numbers, decimals, currency, and verified places
+
+Arrange questions into sections. A section can be answered once or allow
+multiple entries, with a custom “Add another” button. For example, the
+relationship survey is a repeatable section containing single choice and Likert
+questions; housing data entry is a repeatable section containing place and
+numeric questions. Both existing activities open in this shared builder.
+
+Check **Published** and save when ready. Student preview lets researchers try
+the interaction without saving answers. The editor provides a generated iframe
+link and embed code for Moodle. Students can review, change, add, and remove
+their entries before saving.
+
+Every activity has its own student results page, researcher response review,
+cohort plots, and CSV filter. Choice and Likert questions produce distributions;
+numbers produce distributions and summary statistics; free text produces word
+clouds. Researchers can configure numeric scatter plots (including ratios) and
+category-by-Likert stacked comparisons using fields from the same section. Every
+activity uses the same plot workspace and activity navigation. Choose a section,
+chart type, and compatible question(s), then preview privately. Preview uses real
+answers where available and generates labelled examples only for unanswered
+questions or comparisons without paired answers. Examples are never stored as
+responses or shown to students. Unchanged question definitions can reuse answers
+from earlier activity versions; the latest submitted version for each student and
+section takes precedence.
+
+**Add chart** keeps a configuration in the researcher workspace. Each chart has a
+**Show to students** checkbox that saves immediately. Unchecked charts stay in the
+researcher workspace. Existing charts retain their visibility; newly added custom
+charts start private. Visibility and chart settings do not change question versions.
+Respondent highlighting is private to the researcher workspace.
+Student plots highlight their own entries and never expose other pseudonames.
+
+Editing a question automatically advances that question’s version (1, 2, 3, …).
+Unchanged questions keep their versions, including when reordered. A full
+activity version also preserves the complete question set for historical responses.
+The builder and response review show individual question versions.
+
+Response review can show the current activity version or all versions and filter
+by pseudoname. Question edits preserve earlier schemas, wording, and responses.
+CSV exports include historical wording and readable field labels with stable
+keys. Plot settings can be changed without versioning the questions. Adopting
+the shared builder without changing an original activity's questions retains
+its current cohort responses. Closing an activity keeps researcher access.
+
 ### Editing Activities
 
 Editing relationship wording/options or housing fields creates a new active
-question version. Existing responses are kept, but they stay attached to the old
-version and are not included in the current cohort plots.
+question version. Existing responses retain their original schema and wording.
+The shared builder can reuse answers for unchanged questions from earlier activity
+versions; changed question definitions need fresh answers. The latest submitted
+version for each student and section takes precedence, preventing duplicate counts.
+Legacy activity forms continue to use their active question version.
 
-This is intentional, but it matters operationally: coordinate wording/schema
-changes before live teaching where possible. CSV exports include historical
-responses and a `question_version` column.
+Coordinate wording/schema changes before live teaching where possible. CSV exports
+include historical responses and a `question_version` column.
 
 Changing housing plot axes or relationship display mode does not create a new
 question version; those are visualization settings.
@@ -71,9 +136,11 @@ Research team can normally:
 - export CSV files
 - edit activity wording/schema after agreeing the change with the project lead
 
-Moodle/LMS administrators need to provide the Moodle origin, for example
-`https://moodle.example.edu`, to set
-`DJANGO_CSP_FRAME_ANCESTORS`.
+Activities can be embedded from any Moodle/LMS domain. There is no embedding
+allowlist to update when Moodle moves to a new domain. Legacy
+`DJANGO_CSP_FRAME_ANCESTORS` and `DJANGO_REQUIRE_CSP_FRAME_ANCESTORS` environment
+variables are ignored and can be removed. HTTPS iframe deployments still need
+the cookie settings documented below.
 
 ## Data, Backups, And Retention
 
@@ -143,6 +210,13 @@ session, not a named human.
 
 ### Deploy Or Restart
 
+Pushing to GitHub runs CI; it does not pull code onto the VM or rebuild its containers.
+Pull the reviewed changes on the VM before rebuilding:
+
+```bash
+git pull --ff-only origin main
+```
+
 The web container runs database migrations and `collectstatic` automatically on
 boot.
 
@@ -178,7 +252,6 @@ Important variables:
 | `RESEARCH_ADMIN_PASSWORD_HASH` | Researcher password hash generated by `hash_admin_password` |
 | `DJANGO_COOKIE_SAMESITE` | Use `None` for cross-origin Moodle iframe deployment |
 | `DJANGO_COOKIE_SECURE` | Use `1` for HTTPS iframe deployment |
-| `DJANGO_CSP_FRAME_ANCESTORS` | Moodle/LMS origins allowed to embed the app |
 | `SENTRY_DSN` | Optional error tracking |
 | `NOMINATIM_USER_AGENT` | Optional but recommended contact identifier for OpenStreetMap/Nominatim |
 

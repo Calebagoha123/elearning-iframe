@@ -39,6 +39,9 @@ class Activity(models.Model):
     slug = models.SlugField(max_length=80, unique=True)
     title = models.CharField(max_length=160)
     activity_type = models.CharField(max_length=80)
+    description = models.TextField(blank=True)
+    revision = models.PositiveIntegerField(default=1)
+    deleted_at = models.DateTimeField(null=True, blank=True, editable=False)
     is_active = models.BooleanField(default=True)
     created_date = models.DateTimeField(auto_now_add=True)
 
@@ -54,10 +57,12 @@ class Question(models.Model):
     FIELD_TEXT = "text"
     FIELD_CHOICE = "choice"
     FIELD_HOUSING = "housing"
+    FIELD_ACTIVITY = "activity"
     FIELD_TYPES = [
         (FIELD_TEXT, "Text"),
         (FIELD_CHOICE, "Choice"),
         (FIELD_HOUSING, "Housing"),
+        (FIELD_ACTIVITY, "Activity questions"),
     ]
 
     activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="questions")

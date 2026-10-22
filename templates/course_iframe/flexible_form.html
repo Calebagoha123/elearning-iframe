@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ activity.title }}{% if preview %} · Student preview{% endif %}{% endblock %}
+{% block content %}
+<header class="topbar"><div><p class="eyebrow">{% if preview %}Student preview{% else %}Course activity{% endif %}</p><h1>{{ activity.title }}</h1></div>{% if participant %}<span class="identity">ID {{ participant.participant_id }}</span>{% endif %}</header>
+{% if preview %}<a class="text-link preview-return" href="{{ activity_edit_url }}">← Back to activity</a><p class="message">Student preview · You can try the questions and add entries. Answers here are not saved.</p>{% endif %}
+{% if activity.description %}<div class="activity-instructions">{{ activity.description|linebreaks }}</div>{% endif %}
+<form method="post" class="form-stack" data-flexible-response{% if preview %} data-preview{% endif %}>
+  {% csrf_token %}
+  <input type="hidden" name="revision" value="{{ activity.revision }}"><input type="hidden" name="question_id" value="{{ question.pk }}">
+  {% if submission_error %}<p class="message message-error" role="alert">{{ submission_error }}</p>{% endif %}
+  {% if groups %}<p class="muted">Questions marked * need an answer.</p>{% endif %}
+  {% for group in groups %}
+  <section class="panel form-stack" data-response-section data-prefix="{{ group.formset.prefix }}" data-repeatable="{{ group.section.repeatable|yesno:'true,false' }}">
+    <div><h2>{{ group.section.title|default:"Questions" }}</h2>{% if group.section.instructions %}{{ group.section.instructions|linebreaks }}{% endif %}</div>
+    {{ group.formset.management_form }}{{ group.formset.non_form_errors }}
+    <div data-entry-list class="form-stack">{% for entry in group.formset %}{% include "course_iframe/_flexible_entry.html" %}{% endfor %}</div>
+    {% if group.section.repeatable %}
+    <button class="button button-secondary" type="button" data-add-entry>{{ group.section.add_label }}</button>
+    <template data-entry-template>{% include "course_iframe/_flexible_entry.html" with entry=group.formset.empty_form %}</template>
+    {% endif %}
+  </section>
+  {% empty %}<p class="panel muted">No questions have been added yet.</p>{% endfor %}
+  {% if groups and not preview %}<div class="form-actions"><button class="button" type="submit">Save answers and view results</button><a class="text-link" href="{{ activity_results_url }}">Your saved results</a></div>{% endif %}
+</form>
+<script src="{% static 'js/flexible_response.js' %}" defer></script>
+{% endblock %}

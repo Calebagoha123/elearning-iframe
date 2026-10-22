@@ -1,20 +1,24 @@
 {% extends "base.html" %}
 {% load housing_tags %}
 
-{% block title %}Housing data entry{% endblock %}
+{% block title %}{{ activity.title }}{% endblock %}
 
 {% block content %}
 <header class="topbar">
   <div>
-    <p class="eyebrow">Activity 2</p>
-    <h1>Housing data entry</h1>
+    <p class="eyebrow">Course activity</p>
+    <h1>{{ activity.title }}</h1>
   </div>
-  <p class="identity">ID {{ participant.participant_id }}</p>
+  {% if participant %}<p class="identity">ID {{ participant.participant_id }}</p>{% endif %}
 </header>
+{% if preview %}<p class="message">Student preview · Changes here are not saved. <a href="{{ activity_edit_url }}">Back to editor</a></p>{% endif %}
+{% if activity.description %}<div class="activity-instructions">{{ activity.description|linebreaks }}</div>{% endif %}
+
 
 <section class="split-layout">
-  <form method="post" class="panel form-stack housing-entry-form" novalidate>
+  <form method="post" {% if preview %}onsubmit="return false"{% endif %} class="panel form-stack housing-entry-form" novalidate>
     {% csrf_token %}
+    <input type="hidden" name="question_id" value="{{ question.pk }}">
     <fieldset>
       <legend>{{ question.question_text }}</legend>
       {% for row in form.field_rows %}
@@ -46,8 +50,8 @@
       {% endfor %}
     </fieldset>
     <div class="form-actions">
-      <button class="button" type="submit">Add property</button>
-      <a class="button button-secondary" href="{% url 'housing-results' %}">Finish and view results</a>
+      <button class="button" type="submit"{% if preview %} disabled{% endif %}>Add entry</button>
+      <a class="button button-secondary" href="{% if preview %}{{ activity_plots_url }}{% else %}{{ activity_results_url }}{% endif %}">Finish and view results</a>
     </div>
   </form>
 
@@ -71,13 +75,13 @@
               {% endif %}
             {% endfor %}
           </div>
-          <form method="post" action="{% url 'housing-delete-entry' entry.id %}" class="entry-row__action" onsubmit="return confirm('Remove this housing entry? This cannot be undone.');">
+          <form method="post" action="{% url 'activity-delete-entry' activity.slug entry.id %}" class="entry-row__action" onsubmit="return confirm('Remove this entry? This cannot be undone.');">
             {% csrf_token %}
             <button type="submit" class="icon-button entry-row__delete" aria-label="Remove this entry" title="Remove">&times;</button>
           </form>
         </div>
       {% empty %}
-        <p class="muted">No housing entries saved yet.</p>
+        <p class="muted">No entries saved yet.</p>
       {% endfor %}
     </div>
   </aside>

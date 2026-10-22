@@ -25,18 +25,6 @@ def env_list(name, default):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def env_frame_ancestors(name, default):
-    value = os.getenv(name)
-    if value is None:
-        value = default
-    return [
-        item.strip()
-        for chunk in value.split(",")
-        for item in chunk.split()
-        if item.strip()
-    ]
-
-
 def default_cookie_samesite(debug):
     return "Lax" if debug else "None"
 
@@ -90,7 +78,6 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "course_iframe.middleware.ContentSecurityPolicyMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -187,25 +174,9 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = env_bool("DJANGO_HSTS_PRELOAD", False)
     SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", False)  # Caddy already redirects
 
-# Allow embedding inside Moodle via CSP frame-ancestors. Modern browsers prefer
-# this CSP directive over X-Frame-Options, so configure the Moodle/LMS parent
-# origins with DJANGO_CSP_FRAME_ANCESTORS.
-REQUIRE_CSP_FRAME_ANCESTORS = env_bool("DJANGO_REQUIRE_CSP_FRAME_ANCESTORS", not DEBUG)
-if REQUIRE_CSP_FRAME_ANCESTORS and "DJANGO_CSP_FRAME_ANCESTORS" not in os.environ:
-    raise ImproperlyConfigured(
-        "Set DJANGO_CSP_FRAME_ANCESTORS to the Moodle/LMS origin before running production."
-    )
-CSP_FRAME_ANCESTORS = env_frame_ancestors(
-    "DJANGO_CSP_FRAME_ANCESTORS",
-    "'self'",
-)
-X_FRAME_OPTIONS = "SAMEORIGIN"  # Django default; CSP frame-ancestors overrides in modern browsers
-SILENCED_SYSTEM_CHECKS = [
-    # The app is intentionally embedded in Moodle/LMS iframes. CSP frame-ancestors
-    # is the enforcement point; X-Frame-Options cannot express cross-origin
-    # allowlists and would block legitimate Moodle embeds in older browsers.
-    "security.W002",
-]
+# Course activities may be embedded by any LMS domain, including after migrations.
+# Deliberately omit both frame-ancestors and X-Frame-Options restrictions.
+SILENCED_SYSTEM_CHECKS = ["security.W002"]
 
 # Either a plaintext password (dev convenience) or a hashed string produced by
 # `manage.py hash_admin_password` (recommended for production). The login view
@@ -303,3 +274,6 @@ if SENTRY_DSN:
     except ImportError:
         # sentry-sdk not installed; keep running without it.
         pass
+
+# Repeatable sections submit many typed fields in one activity response.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000

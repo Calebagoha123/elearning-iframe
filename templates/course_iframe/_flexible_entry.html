@@ -1,0 +1,26 @@
+<fieldset class="flexible-entry" data-entry-row>
+  <legend>{% if group.section.repeatable %}Entry <span data-entry-number>{{ forloop.counter|default:"1" }}</span>{% else %}Questions{% endif %}</legend>
+  {{ entry.response_id }}{{ entry.non_field_errors }}
+  {% for row in entry.field_rows %}
+  <div class="flexible-answer flexible-answer--{{ row.spec.type }}"{% if row.spec.type == 'place' %} data-place-field{% endif %}>
+    {% if row.spec.type == 'likert' %}
+      <fieldset><legend>{{ row.spec.label }}{% if row.spec.required %} *{% endif %}</legend>
+        {% if row.spec.help_text %}<p class="muted">{{ row.spec.help_text }}</p>{% endif %}
+        <div class="likert-scroll"><div class="likert-scale" style="--likert-count: {{ row.spec.choices|length }}">{% for option in row.field %}<label class="likert-option">{{ option.tag }}<span>{{ option.choice_label }}</span></label>{% endfor %}</div></div>
+      </fieldset>
+    {% else %}
+      <label for="{{ row.field.id_for_label }}">{{ row.spec.label }}{% if row.spec.required %} *{% endif %}</label>
+      {% if row.spec.help_text %}<small>{{ row.spec.help_text }}</small>{% endif %}
+      {% if row.spec.type == 'currency_eur' %}<span class="currency-input"><span class="currency-input__symbol" aria-hidden="true">€</span>{{ row.field }}</span>{% else %}{{ row.field }}{% endif %}
+    {% endif %}
+    {{ row.field.errors }}
+    {% if row.other %}<div data-other-answer><label for="{{ row.other.id_for_label }}">{{ row.other.label }}</label>{{ row.other }}{{ row.other.errors }}</div>{% endif %}
+    {% if row.spec.type == 'place' %}
+      {% for hidden in row.place_fields %}{{ hidden }}{% endfor %}
+      <ul class="place-suggestions" data-place-results role="listbox" hidden></ul>
+      <small data-place-status role="status" aria-live="polite">Type a place and choose a suggestion.</small>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if group.section.repeatable %}<button type="button" class="text-link builder-remove" data-remove-entry>Remove entry</button>{% endif %}
+</fieldset>

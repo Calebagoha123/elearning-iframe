@@ -63,7 +63,7 @@ HOUSING_FIELD_PLACE = "place"
 HOUSING_FIELD_CHOICE = "choice"
 
 HOUSING_FIELD_TYPE_CHOICES = [
-    (HOUSING_FIELD_PLACE, "Place (verified via OpenStreetMap)"),
+    (HOUSING_FIELD_PLACE, "Location"),
     (HOUSING_FIELD_CURRENCY_EUR, "Currency (€)"),
     (HOUSING_FIELD_DECIMAL, "Number (decimal)"),
     (HOUSING_FIELD_INTEGER, "Number (integer)"),
@@ -151,12 +151,14 @@ def participant_from_session(request):
         return None
 
 
-def active_question(activity_slug, question_slug):
-    return Question.objects.select_related("activity").get(
+def active_question(activity_slug, question_slug, require_active=True):
+    questions = Question.objects.filter(activity__deleted_at__isnull=True).select_related("activity")
+    if require_active:
+        questions = questions.filter(activity__is_active=True)
+    return questions.get(
         activity__slug=activity_slug,
         slug=question_slug,
         is_active=True,
-        activity__is_active=True,
     )
 
 
@@ -206,12 +208,14 @@ def update_relationship_likert_points(points):
     return create_question_version(question, question.question_text, options)
 
 
-def update_relationship_settings(question_text, likert_points, likert_labels, relationship_choices=None):
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+def update_relationship_settings(question_text, likert_points, likert_labels, relationship_choices=None, question=None, input_labels=None):
+    question = question or active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
     options = dict(question.options_json or {})
     if relationship_choices is not None:
         options["choices"] = list(relationship_choices)
     options["likert_points"] = int(likert_points)
+    if input_labels:
+        options.update(input_labels)
     stored_labels = dict(options.get("likert_labels") or {})
     stored_labels[str(int(likert_points))] = dict(likert_labels)
     options["likert_labels"] = stored_labels
@@ -331,9 +335,9 @@ def housing_scatter_config(question):
     return {"x_axis": x, "y_axis": y}
 
 
-def update_housing_visualization(x_axis, y_axis):
+def update_housing_visualization(x_axis, y_axis, question=None):
     """Persist axis specs. ``x_axis`` and ``y_axis`` are dicts with numerator/denominator."""
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+    question = question or active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
     options = dict(question.options_json or {})
     numeric_keys = {field["key"] for field in housing_numeric_fields(question)}
     ordered_keys = [field["key"] for field in housing_numeric_fields(question)]
@@ -356,8 +360,8 @@ def update_housing_visualization(x_axis, y_axis):
     return question
 
 
-def update_housing_schema(question_text, fields, viz=None):
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+def update_housing_schema(question_text, fields, viz=None, question=None):
+    question = question or active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
     options = dict(question.options_json or {})
     options["fields"] = list(fields)
     if viz:
@@ -368,9 +372,20 @@ def update_housing_schema(question_text, fields, viz=None):
     return create_question_version(question, question_text, options)
 
 
+class ActivityUnavailable(Exception):
+    """The activity was closed or its question changed during submission."""
+
+
+def _lock_current_question(question):
+    activity = Activity.objects.select_for_update().get(pk=question.activity_id)
+    if activity.deleted_at or not activity.is_active or not Question.objects.filter(pk=question.pk, is_active=True).exists():
+        raise ActivityUnavailable("This activity has changed. Please complete the updated form.")
+
+
 def save_relationship_responses(participant, question, relationships):
     likert_points = relationship_likert_points(question)
     with transaction.atomic():
+        _lock_current_question(question)
         Response.objects.filter(participant=participant, question=question).delete()
         return Response.objects.bulk_create(
             [
@@ -440,7 +455,9 @@ def _housing_payload_from_cleaned(question, cleaned_data):
     return payload
 
 
+@transaction.atomic
 def save_housing_response(participant, question, cleaned_data):
+    _lock_current_question(question)
     return Response.objects.create(
         participant=participant,
         activity=question.activity,
@@ -597,10 +614,10 @@ def relationship_display_mode(question):
     return mode if mode in RELATIONSHIP_DISPLAY_MODES else DEFAULT_RELATIONSHIP_DISPLAY_MODE
 
 
-def update_relationship_display_mode(mode):
+def update_relationship_display_mode(mode, question=None):
     if mode not in RELATIONSHIP_DISPLAY_MODES:
         mode = DEFAULT_RELATIONSHIP_DISPLAY_MODE
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+    question = question or active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
     options = dict(question.options_json or {})
     display = dict(options.get("display") or {})
     display["mode"] = mode
@@ -736,4 +753,4 @@ def participant_count_for_question(question):
 
 
 def mvp_activities():
-    return Activity.objects.filter(slug__in=[RELATIONSHIP_SLUG, HOUSING_SLUG]).order_by("slug")
+    return Activity.objects.filter(deleted_at__isnull=True, slug__in=[RELATIONSHIP_SLUG, HOUSING_SLUG]).order_by("slug")

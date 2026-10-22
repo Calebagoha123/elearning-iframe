@@ -12,9 +12,17 @@
 </header>
 
 <section class="panel">
-  <p class="muted">Everything you've shared across both activities, shown alongside the cohort.</p>
+  <p class="muted">Your relationship and housing responses, shown alongside the cohort.</p>
 </section>
 
-{% include "course_iframe/_relationship_chart.html" %}
-{% include "course_iframe/_housing_chart.html" %}
+{% if show_relationship %}{% include "course_iframe/_relationship_chart.html" %}{% endif %}
+{% if show_housing %}{% include "course_iframe/_housing_chart.html" %}{% endif %}
+{% if custom_activities %}
+<section class="panel">
+  <h2>More activity results</h2>
+  {% for activity in custom_activities %}
+  <div class="entry-row"><strong>{{ activity.title }}</strong><a class="text-link" href="{% url 'activity-results' activity.slug %}">View your results</a></div>
+  {% endfor %}
+</section>
+{% endif %}
 {% endblock %}

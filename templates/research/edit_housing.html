@@ -1,23 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Edit housing activity{% endblock %}
+{% block title %}Edit {{ activity.title }}{% endblock %}
 
 {% block content %}
 <header class="topbar">
   <div>
     <p class="eyebrow">Researcher · Activity</p>
-    <h1>Housing data entry</h1>
+    <h1>{{ activity.title }}</h1>
   </div>
   <a class="text-link" href="{% url 'research-dashboard' %}">&larr; Dashboard</a>
 </header>
+{% include "research/_activity_nav.html" %}
+
 
 <section class="panel">
   <form
     method="post"
     class="form-stack housing-schema-editor"
-    data-confirm-versioning="Saving creates a new active version of this question. Existing responses stay tied to the previous version and will no longer be included in the current cohort plots. Continue?"
+    data-confirm-versioning="Save changes to this activity? Changed questions create a new version; earlier responses remain available under All versions on the responses page."
   >
     {% csrf_token %}
+    {% include "research/_activity_settings.html" %}
+    {{ form.non_field_errors }}
 
     <fieldset>
       <legend>Question wording</legend>
@@ -29,8 +33,8 @@
     </fieldset>
 
     <fieldset class="housing-fields-fieldset">
-      <legend>Housing fields</legend>
-      <p class="muted">Define what students are asked. Drag to reorder, change field types, and add or remove fields. Type changes apply to new submissions only.</p>
+      <legend>Entry fields</legend>
+      <p class="muted">Define the fields students fill in for each entry. Drag to reorder, change field types, and add or remove fields. Type changes apply to new submissions only.</p>
 
       {{ field_formset.management_form }}
 
@@ -115,7 +119,7 @@
       {% endif %}
     </fieldset>
 
-    <p class="muted">Scatter plot axes are configured on the <a href="{% url 'research-housing-plots' %}">plot page</a>.</p>
+    <p class="muted">Scatter plot axes are configured on the <a href="{{ activity_plots_url }}">plot page</a>.</p>
 
     <div class="form-actions">
       <button class="button" type="submit" data-save-changes>Save changes</button>

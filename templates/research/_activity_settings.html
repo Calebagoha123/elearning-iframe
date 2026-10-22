@@ -1,0 +1,22 @@
+{% load static %}
+
+{{ activity_settings.non_field_errors }}
+<input type="hidden" name="activity_settings" value="1">
+{{ activity_settings.revision }}{{ activity_settings.revision.errors }}
+<fieldset class="form-stack"><legend>Activity details</legend>
+{% for field in activity_settings.visible_fields %}
+  <div class="builder-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>
+{% endfor %}
+<p class="muted">Uncheck Published to keep a draft or close student access. Saved responses are retained.</p>
+</fieldset>
+<details class="activity-embed-details">
+  <summary>Moodle link and embed code</summary>
+  <div class="form-stack">
+    <label for="embed-url">Student activity link</label><input id="embed-url" readonly value="{{ embed_url }}">
+    <button type="button" class="button button-secondary button-small" data-copy="embed-url">Copy link</button>
+    <label for="embed-code">Embed code</label><textarea id="embed-code" readonly rows="3">{{ embed_code }}</textarea>
+    <button type="button" class="button button-secondary button-small" data-copy="embed-code">Copy embed code</button>
+    <small role="status" aria-live="polite" data-copy-status></small>
+  </div>
+</details>
+<script src="{% static 'js/activity_catalog.js' %}" defer></script>

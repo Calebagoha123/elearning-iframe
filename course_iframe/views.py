@@ -10,8 +10,9 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.hashers import check_password
 from django.db import connection
-from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import redirect, render
+from django.db.models import Count, Q
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -20,16 +21,14 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from .forms import (
     ExportFilterForm,
-    HousingEditForm,
     HousingEntryForm,
-    HousingFieldFormSetFactory,
     ParticipantEntryForm,
-    RelationshipEditForm,
     RelationshipFormSet,
     ResearchLoginForm,
 )
-from .models import ExportLog, Participant, Response
+from .models import Activity, ExportLog, Participant, Question, Response
 from .services import (
+    ActivityUnavailable,
     HOUSING_QUESTION_SLUG,
     HOUSING_SLUG,
     RELATIONSHIP_QUESTION_SLUG,
@@ -42,7 +41,6 @@ from .services import (
     housing_raw_payloads,
     housing_scatter_config,
     housing_schema,
-    mvp_activities,
     palette_color_for_relationship,
     participant_count_for_question,
     relationship_color_map,
@@ -56,10 +54,8 @@ from .services import (
     remember_participant,
     save_housing_response,
     save_relationship_responses,
-    update_housing_schema,
     update_housing_visualization,
     update_relationship_display_mode,
-    update_relationship_settings,
 )
 
 
@@ -100,25 +96,33 @@ def _add_payload_column(columns, column):
         columns.append(column)
 
 
-def housing_csv_columns(rows=None):
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+def housing_csv_columns(rows=None, activity_slug=HOUSING_SLUG):
+    question = active_question(activity_slug, HOUSING_QUESTION_SLUG, require_active=False)
     columns = []
     for field in housing_schema(question):
         _add_payload_column(columns, field["key"])
-    if rows is not None:
-        for item in rows:
-            if item.activity.slug != HOUSING_SLUG:
-                continue
-            for column in (item.payload or {}):
+    for item in rows or []:
+        if item.activity.slug == activity_slug:
+            for column in item.payload or {}:
                 _add_payload_column(columns, column)
     return columns
 
 
 def activity_payload_columns(slug, rows=None):
-    if slug == RELATIONSHIP_SLUG:
+    activity = Activity.objects.filter(deleted_at__isnull=True, slug=slug).first()
+    if activity and activity.activity_type == "builder":
+        from .flexible import export_payload
+        question = activity.questions.get(is_active=True)
+        columns = list(export_payload(question=question))
+        for response in rows or []:
+            if response.activity_id == activity.pk:
+                for key in export_payload(response):
+                    _add_payload_column(columns, key)
+        return columns
+    if activity and activity.activity_type == "relationship_survey":
         return list(RELATIONSHIP_CSV_COLUMNS)
-    if slug == HOUSING_SLUG:
-        return housing_csv_columns(rows)
+    if activity and activity.activity_type == "housing_survey":
+        return housing_csv_columns(rows, activity_slug=slug)
     return []
 
 
@@ -183,8 +187,10 @@ def healthz(request):
 @require_http_methods(["GET", "POST"])
 def activity_iframe_entry(request, activity_slug):
     activity_config = ACTIVITY_ENTRY_TARGETS.get(activity_slug)
-    if activity_config is None:
-        raise Http404("Activity not found")
+    requested_activity = None
+    if activity_slug != "summary":
+        requested_activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True, activity_type__in=["housing_survey", "relationship_survey", "builder"])
+        activity_config = {"title": requested_activity.title, "redirect": "activity-student"}
 
     data_source = request.POST if request.method == "POST" else request.GET
     initial = {
@@ -199,6 +205,10 @@ def activity_iframe_entry(request, activity_slug):
         if form.is_valid():
             participant = get_or_create_participant(form.cleaned_data["pseudoname"])
             remember_participant(request, participant)
+            if requested_activity:
+                if activity_slug in ACTIVITY_ENTRY_TARGETS:
+                    return redirect(ACTIVITY_ENTRY_TARGETS[activity_slug]["redirect"])
+                return redirect("activity-student", activity_slug=activity_slug)
             return redirect(activity_config["redirect"])
     else:
         form = ParticipantEntryForm(initial=initial)
@@ -215,46 +225,59 @@ def activity_iframe_entry(request, activity_slug):
 
 @student_required
 def activity_landing(request, participant):
-    relationship_done = Response.objects.filter(
-        participant=participant,
-        activity__slug=RELATIONSHIP_SLUG,
-    ).exists()
-    housing_count = Response.objects.filter(
-        participant=participant,
-        activity__slug=HOUSING_SLUG,
-    ).count()
-    return render(
-        request,
-        "course_iframe/activity_landing.html",
-        {
-            "participant": participant,
-            "activities": mvp_activities(),
-            "relationship_done": relationship_done,
-            "housing_count": housing_count,
-        },
+    activities = Activity.objects.filter(deleted_at__isnull=True, is_active=True, activity_type__in=["housing_survey", "relationship_survey", "builder"]).annotate(
+        saved_count=Count("responses", filter=Q(responses__participant=participant)),
     )
+    return render(request, "course_iframe/activity_landing.html", {"participant": participant, "activities": activities})
+
+
+def _student_question(activity_slug, question_slug):
+    return get_object_or_404(
+        Question.objects.select_related("activity"), activity__slug=activity_slug, activity__deleted_at__isnull=True,
+        slug=question_slug, is_active=True, activity__is_active=True,
+    )
+
+
+def _activity_context(question):
+    from .activity_builder import activity_links
+    return activity_links(question.activity)
+
+
+def _activity_redirect(slug, original_slug, legacy_route, route):
+    return redirect(legacy_route) if slug == original_slug else redirect(route, activity_slug=slug)
 
 
 @student_required
 @require_http_methods(["GET", "POST"])
-def relationship_activity(request, participant):
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+def relationship_activity(request, participant, activity_slug=RELATIONSHIP_SLUG):
+    activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
+    if activity.activity_type == "builder":
+        from . import flexible_views
+        return flexible_views.student(request, participant, activity)
+    question = _student_question(activity_slug, RELATIONSHIP_QUESTION_SLUG)
+    if request.method == "POST" and request.POST.get("question_id", str(question.pk)) != str(question.pk):
+        messages.error(request, "This activity has changed. Please complete the updated form.")
+        return redirect("activity-student", activity_slug=activity_slug)
     choices = question.options_json.get("choices", [])
     income_choices = relationship_likert_choices(question)
     if request.method == "POST":
         formset = RelationshipFormSet(
             request.POST,
             prefix="relationships",
-            form_kwargs={"choices": choices, "income_choices": income_choices},
+            form_kwargs={"choices": choices, "income_choices": income_choices, "labels": question.options_json},
         )
         if formset.is_valid():
-            save_relationship_responses(
-                participant=participant,
-                question=question,
-                relationships=formset.relationship_payloads(),
-            )
-            messages.success(request, "Relationship responses saved.")
-            return redirect("relationship-results")
+            try:
+                save_relationship_responses(
+                    participant=participant,
+                    question=question,
+                    relationships=formset.relationship_payloads(),
+                )
+            except ActivityUnavailable as exc:
+                messages.error(request, str(exc))
+                return redirect("activity-student", activity_slug=activity_slug)
+            messages.success(request, "Responses saved.")
+            return _activity_redirect(activity_slug, RELATIONSHIP_SLUG, "relationship-results", "activity-results")
     else:
         existing = Response.objects.filter(participant=participant, question=question).order_by("created_at")
         initial = []
@@ -270,13 +293,14 @@ def relationship_activity(request, participant):
         formset = RelationshipFormSet(
             initial=initial,
             prefix="relationships",
-            form_kwargs={"choices": choices, "income_choices": income_choices},
+            form_kwargs={"choices": choices, "income_choices": income_choices, "labels": question.options_json},
         )
 
     return render(
         request,
         "course_iframe/relationship_form.html",
         {
+            **_activity_context(question),
             "formset": formset,
             "participant": participant,
             "question": question,
@@ -306,6 +330,7 @@ def _relationship_chart_context(question, participant, mode=None):
     segmented = relationship_segmented_bars(question, participant=participant, mode=mode)
     axis = frequency_axis(segmented["column_max"])
     return {
+        "comparison_chart_title": question.options_json.get("comparison_label", "Income comparison") + " by " + question.options_json.get("item_label", "relationship").lower(),
         "words": words,
         "segmented_columns": segmented["columns"],
         "segmented_max": segmented["column_max"],
@@ -317,14 +342,19 @@ def _relationship_chart_context(question, participant, mode=None):
 
 
 @student_required
-def relationship_results(request, participant):
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+def relationship_results(request, participant, activity_slug=RELATIONSHIP_SLUG):
+    activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
+    if activity.activity_type == "builder" or "visualizations" in activity.questions.get(is_active=True).options_json:
+        from . import flexible_views
+        return flexible_views.results(request, participant, activity)
+    question = _student_question(activity_slug, RELATIONSHIP_QUESTION_SLUG)
     count = participant_count_for_question(question)
     chart_context = _relationship_chart_context(question, participant)
     return render(
         request,
         "course_iframe/relationship_results.html",
         {
+            **_activity_context(question),
             "participant": participant,
             "count": count,
             **chart_context,
@@ -334,26 +364,38 @@ def relationship_results(request, participant):
 
 @student_required
 @require_http_methods(["GET", "POST"])
-def housing_activity(request, participant):
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+def housing_activity(request, participant, activity_slug=HOUSING_SLUG):
+    activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
+    if activity.activity_type == "builder":
+        from . import flexible_views
+        return flexible_views.student(request, participant, activity)
+    question = _student_question(activity_slug, HOUSING_QUESTION_SLUG)
+    if request.method == "POST" and request.POST.get("question_id", str(question.pk)) != str(question.pk):
+        messages.error(request, "This activity has changed. Please complete the updated form.")
+        return redirect("activity-student", activity_slug=activity_slug)
     if request.method == "POST":
         form = HousingEntryForm(request.POST, question=question)
         if form.is_valid():
-            save_housing_response(participant, question, form.cleaned_data)
-            messages.success(request, "Housing entry saved. Add another entry or view results when finished.")
-            return redirect("housing-activity")
+            try:
+                save_housing_response(participant, question, form.cleaned_data)
+            except ActivityUnavailable as exc:
+                messages.error(request, str(exc))
+                return redirect("activity-student", activity_slug=activity_slug)
+            messages.success(request, "Entry saved. Add another entry or view results when finished.")
+            return _activity_redirect(activity_slug, HOUSING_SLUG, "housing-activity", "activity-student")
     else:
         form = HousingEntryForm(question=question)
 
     entries = Response.objects.filter(
         participant=participant,
-        activity__slug=HOUSING_SLUG,
+        activity__slug=activity_slug,
     ).order_by("-created_at")
     summary_fields = housing_schema(question)[:2]
     return render(
         request,
         "course_iframe/housing_form.html",
         {
+            **_activity_context(question),
             "form": form,
             "entries": entries,
             "participant": participant,
@@ -370,6 +412,7 @@ def housing_delete_entry(request, participant, response_id):
         pk=response_id,
         participant=participant,
         activity__slug=HOUSING_SLUG,
+        activity__deleted_at__isnull=True,
     ).delete()
     if deleted:
         messages.success(request, "Housing entry removed.")
@@ -392,8 +435,12 @@ def _housing_chart_context(question, participant, include_identity=False):
 
 
 @student_required
-def housing_results(request, participant):
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+def housing_results(request, participant, activity_slug=HOUSING_SLUG):
+    activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
+    if activity.activity_type == "builder" or "visualizations" in activity.questions.get(is_active=True).options_json:
+        from . import flexible_views
+        return flexible_views.results(request, participant, activity)
+    question = _student_question(activity_slug, HOUSING_QUESTION_SLUG)
     count = participant_count_for_question(question)
     chart_context = _housing_chart_context(question, participant)
     has_your_points = any(point["is_yours"] for point in chart_context["payloads"])
@@ -401,6 +448,7 @@ def housing_results(request, participant):
         request,
         "course_iframe/housing_results.html",
         {
+            **_activity_context(question),
             "participant": participant,
             "count": count,
             "has_your_points": has_your_points,
@@ -411,21 +459,22 @@ def housing_results(request, participant):
 
 @student_required
 def student_summary(request, participant):
-    relationship_question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
-    housing_question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
-    relationship_context = _relationship_chart_context(relationship_question, participant)
-    housing_context = _housing_chart_context(housing_question, participant)
-    has_your_points = any(point["is_yours"] for point in housing_context["payloads"])
-    return render(
-        request,
-        "course_iframe/student_summary.html",
-        {
-            "participant": participant,
-            "has_your_points": has_your_points,
-            **relationship_context,
-            **housing_context,
-        },
-    )
+    relationship_question = Question.objects.filter(activity__deleted_at__isnull=True, activity__slug=RELATIONSHIP_SLUG, activity__activity_type="relationship_survey", activity__is_active=True, is_active=True).select_related("activity").first()
+    housing_question = Question.objects.filter(activity__deleted_at__isnull=True, activity__slug=HOUSING_SLUG, activity__activity_type="housing_survey", activity__is_active=True, is_active=True).select_related("activity").first()
+    if relationship_question and "visualizations" in relationship_question.options_json:
+        relationship_question = None
+    if housing_question and "visualizations" in housing_question.options_json:
+        housing_question = None
+    relationship_context = _relationship_chart_context(relationship_question, participant) if relationship_question else {}
+    housing_context = _housing_chart_context(housing_question, participant) if housing_question else {}
+    return render(request, "course_iframe/student_summary.html", {
+        "participant": participant, "show_relationship": bool(relationship_question), "show_housing": bool(housing_question),
+        "has_your_points": any(point["is_yours"] for point in housing_context.get("payloads", [])),
+        **relationship_context, **housing_context,
+        "custom_activities": Activity.objects.filter(deleted_at__isnull=True,
+            activity_type__in=["housing_survey", "relationship_survey", "builder"], is_active=True, responses__participant=participant,
+        ).exclude(pk__in=[q.activity_id for q in [relationship_question, housing_question] if q]).distinct(),
+    })
 
 
 def _researcher_password_matches(submitted):
@@ -484,51 +533,32 @@ def research_logout(request):
 
 @researcher_required
 def research_dashboard(request):
-    active_questions = {
-        RELATIONSHIP_SLUG: active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG),
-        HOUSING_SLUG: active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG),
-    }
-    edit_routes = {
-        RELATIONSHIP_SLUG: "research-edit-relationship",
-        HOUSING_SLUG: "research-edit-housing",
-    }
-    plot_routes = {
-        RELATIONSHIP_SLUG: "research-relationship-plots",
-        HOUSING_SLUG: "research-housing-plots",
-    }
-    activity_cards = []
-    for activity in mvp_activities():
-        slug = activity.slug
-        activity_cards.append(
-            {
-                "slug": slug,
-                "title": activity.title,
-                "count": Response.objects.filter(question=active_questions[slug]).count(),
-                "edit_url_name": edit_routes.get(slug),
-                "plot_url_name": plot_routes.get(slug),
-            }
-        )
-
-    return render(
-        request,
-        "research/dashboard.html",
-        {
-            "participant_count": Participant.objects.count(),
-            "activity_cards": activity_cards,
-            "export_form": ExportFilterForm(),
-            "recent_exports": ExportLog.objects.all()[:8],
-        },
-    )
+    from .activity_builder import ACTIVITY_TYPES, activity_links
+    cards = []
+    for activity in Activity.objects.filter(deleted_at__isnull=True, activity_type__in=ACTIVITY_TYPES).annotate(
+        response_count=Count("responses", filter=Q(responses__question__is_active=True)),
+        participant_count=Count("responses__participant", distinct=True, filter=Q(responses__question__is_active=True)),
+    ):
+        cards.append({**activity_links(activity), "count": activity.response_count,
+            "participant_count": activity.participant_count, "format_label": ACTIVITY_TYPES[activity.activity_type]["label"]})
+    return render(request, "research/dashboard.html", {
+        "participant_count": Participant.objects.count(), "activity_cards": cards,
+        "export_form": ExportFilterForm(), "recent_exports": ExportLog.objects.all()[:8],
+    })
 
 
 @researcher_required
 @require_http_methods(["GET", "POST"])
-def research_relationship_plots(request):
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
+def research_relationship_plots(request, activity_slug=RELATIONSHIP_SLUG):
+    activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug)
+    if activity.activity_type == "builder" or request.method != "POST" or "display_mode" not in request.POST:
+        from . import flexible_views
+        return flexible_views.plots(request, activity)
+    question = active_question(activity_slug, RELATIONSHIP_QUESTION_SLUG, require_active=False)
     if request.method == "POST":
         previous_mode = relationship_display_mode(question)
         new_mode = (request.POST.get("display_mode") or "").strip()
-        updated = update_relationship_display_mode(new_mode)
+        updated = update_relationship_display_mode(new_mode, question=question)
         applied = relationship_display_mode(updated)
         if applied == previous_mode:
             messages.info(request, "No changes to relationship chart.")
@@ -543,7 +573,7 @@ def research_relationship_plots(request):
                     "mode": applied,
                 },
             )
-        return redirect("research-relationship-plots")
+        return _activity_redirect(activity_slug, RELATIONSHIP_SLUG, "research-relationship-plots", "research-activity-plots")
 
     count = participant_count_for_question(question)
     chart_context = _relationship_chart_context(question, participant=None)
@@ -552,6 +582,7 @@ def research_relationship_plots(request):
         request,
         "course_iframe/relationship_results.html",
         {
+            **_activity_context(question),
             "count": count,
             "display_mode_choices": [
                 ("both", "Side-by-side (yours + cohort)"),
@@ -576,13 +607,17 @@ def _parse_axis_spec(post, prefix):
 
 @researcher_required
 @require_http_methods(["GET", "POST"])
-def research_housing_plots(request):
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
+def research_housing_plots(request, activity_slug=HOUSING_SLUG):
+    activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug)
+    if activity.activity_type == "builder" or request.method != "POST" or "x_axis_mode" not in request.POST:
+        from . import flexible_views
+        return flexible_views.plots(request, activity)
+    question = active_question(activity_slug, HOUSING_QUESTION_SLUG, require_active=False)
     if request.method == "POST":
         old_config = housing_scatter_config(question)
         x_axis = _parse_axis_spec(request.POST, "x_axis")
         y_axis = _parse_axis_spec(request.POST, "y_axis")
-        updated = update_housing_visualization(x_axis=x_axis, y_axis=y_axis)
+        updated = update_housing_visualization(x_axis=x_axis, y_axis=y_axis, question=question)
         new_config = housing_scatter_config(updated)
         if new_config == old_config:
             messages.info(request, "No changes to scatter plot.")
@@ -598,7 +633,7 @@ def research_housing_plots(request):
                     "y_axis": new_config["y_axis"],
                 },
             )
-        return redirect("research-housing-plots")
+        return _activity_redirect(activity_slug, HOUSING_SLUG, "research-housing-plots", "research-activity-plots")
 
     count = participant_count_for_question(question)
     chart_context = _housing_chart_context(question, None, include_identity=True)
@@ -610,6 +645,7 @@ def research_housing_plots(request):
         request,
         "course_iframe/housing_results.html",
         {
+            **_activity_context(question),
             "count": count,
             "has_your_points": False,
             "focus_choices": focus_choices,
@@ -627,89 +663,15 @@ def research_housing_plots(request):
 @researcher_required
 @require_http_methods(["GET", "POST"])
 def edit_relationship(request):
-    question = active_question(RELATIONSHIP_SLUG, RELATIONSHIP_QUESTION_SLUG)
-    form = RelationshipEditForm(request.POST or None, question=question)
-    if request.method == "POST" and form.is_valid():
-        if not form.has_meaningful_changes():
-            messages.info(request, "No changes to save.")
-            return redirect("research-edit-relationship")
-        new_question = update_relationship_settings(
-            question_text=form.cleaned_data["question_text"],
-            likert_points=int(form.cleaned_data["likert_points"]),
-            likert_labels=form.labels_for_selected_scale(),
-            relationship_choices=form.relationship_choices_for_save(),
-        )
-        logger.info(
-            "relationship survey updated",
-            extra={
-                "event": "researcher.schema.relationship.updated",
-                "activity": RELATIONSHIP_SLUG,
-                "actor": researcher_actor(request),
-                "from_version": question.version,
-                "to_version": new_question.version,
-            },
-        )
-        messages.success(request, "Relationship survey updated.")
-        return redirect("research-edit-relationship")
-
-    return render(
-        request,
-        "research/edit_relationship.html",
-        {
-            "form": form,
-            "question": question,
-            "selected_points": int(form["likert_points"].value() or relationship_likert_points(question)),
-        },
-    )
+    from .builder_views import activity_editor
+    return activity_editor(request, activity_slug=RELATIONSHIP_SLUG)
 
 
 @researcher_required
 @require_http_methods(["GET", "POST"])
 def edit_housing(request):
-    question = active_question(HOUSING_SLUG, HOUSING_QUESTION_SLUG)
-    form = HousingEditForm(request.POST or None, question=question)
-    if request.method == "POST":
-        field_formset = HousingFieldFormSetFactory(request.POST, prefix="fields")
-    else:
-        field_formset = HousingFieldFormSetFactory(
-            initial=form.initial_field_rows(),
-            prefix="fields",
-        )
-
-    if request.method == "POST" and form.is_valid() and field_formset.is_valid():
-        new_fields = form.serialize_fields(field_formset)
-        if not new_fields:
-            messages.error(request, "Add at least one housing field.")
-        elif not form.has_meaningful_changes(new_fields):
-            messages.info(request, "No changes to save.")
-            return redirect("research-edit-housing")
-        else:
-            new_question = update_housing_schema(
-                question_text=form.cleaned_data["question_text"],
-                fields=new_fields,
-            )
-            logger.info(
-                "housing schema updated",
-                extra={
-                    "event": "researcher.schema.housing.updated",
-                    "activity": HOUSING_SLUG,
-                    "actor": researcher_actor(request),
-                    "from_version": question.version,
-                    "to_version": new_question.version,
-                },
-            )
-            messages.success(request, "Housing activity updated.")
-            return redirect("research-edit-housing")
-
-    return render(
-        request,
-        "research/edit_housing.html",
-        {
-            "form": form,
-            "field_formset": field_formset,
-            "question": question,
-        },
-    )
+    from .builder_views import activity_editor
+    return activity_editor(request, activity_slug=HOUSING_SLUG)
 
 
 @researcher_required
@@ -718,7 +680,7 @@ def research_export_csv(request):
     if not form.is_valid():
         return HttpResponse("Invalid export filters", status=400, content_type="text/plain")
 
-    qs = Response.objects.select_related(
+    qs = Response.objects.filter(activity__deleted_at__isnull=True).select_related(
         "participant",
         "activity",
         "question",
@@ -738,7 +700,7 @@ def research_export_csv(request):
         payload_columns = activity_payload_columns(activity, rows)
     else:
         payload_columns = []
-        for slug in (RELATIONSHIP_SLUG, HOUSING_SLUG):
+        for slug in dict.fromkeys([RELATIONSHIP_SLUG, HOUSING_SLUG] + [row.activity.slug for row in rows]):
             for column in activity_payload_columns(slug, rows):
                 if column not in payload_columns:
                     payload_columns.append(column)
@@ -750,6 +712,9 @@ def research_export_csv(request):
     row_count = 0
     for item in rows:
         payload = item.payload or {}
+        if item.activity.activity_type == "builder":
+            from .flexible import export_payload
+            payload = export_payload(item)
         writer.writerow(
             [
                 item.participant.participant_id,

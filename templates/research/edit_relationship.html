@@ -1,24 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Edit relationship survey{% endblock %}
+{% block title %}Edit {{ activity.title }}{% endblock %}
 
 {% block content %}
 <header class="topbar">
   <div>
     <p class="eyebrow">Researcher · Activity</p>
-    <h1>Relationship survey</h1>
+    <h1>{{ activity.title }}</h1>
   </div>
   <a class="text-link" href="{% url 'research-dashboard' %}">&larr; Dashboard</a>
 </header>
+{% include "research/_activity_nav.html" %}
+
 
 <section class="panel">
   <form
     method="post"
     class="form-stack"
     data-relationship-edit
-    data-confirm-versioning="Saving creates a new active version of this question. Existing responses stay tied to the previous version and will no longer be included in the current cohort plots. Continue?"
+    data-confirm-versioning="Save changes to this activity? Changed questions create a new version; earlier responses remain available under All versions on the responses page."
   >
     {% csrf_token %}
+    {% include "research/_activity_settings.html" %}
+    {{ form.non_field_errors }}
 
     <fieldset>
       <legend>Question wording</legend>
@@ -30,7 +34,13 @@
     </fieldset>
 
     <fieldset>
-      <legend>Relationship options</legend>
+      <legend>Input labels</legend>
+      <label><span>{{ form.item_label.label }}</span>{{ form.item_label }}{{ form.item_label.errors }}</label>
+      <label><span>{{ form.comparison_label.label }}</span>{{ form.comparison_label }}{{ form.comparison_label.errors }}</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Categories</legend>
       <label>
         <span>{{ form.relationship_choices.label }}</span>
         {{ form.relationship_choices }}
@@ -40,7 +50,7 @@
     </fieldset>
 
     <fieldset>
-      <legend>Income comparison scale</legend>
+      <legend>Comparison scale</legend>
       <label>
         <span>{{ form.likert_points.label }}</span>
         {{ form.likert_points }}
