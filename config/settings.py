@@ -59,7 +59,10 @@ def validate_production_password_hash(value):
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
 DEBUG = env_bool("DJANGO_DEBUG", True)
 require_production_secret("DJANGO_SECRET_KEY", SECRET_KEY, DEV_SECRET_KEY)
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+# Docker probes the application over loopback, independently of its public host.
+ALLOWED_HOSTS = list(dict.fromkeys(
+    env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1") + ["localhost", "127.0.0.1"]
+))
 
 INSTALLED_APPS = [
     "django.contrib.admin",

@@ -1046,6 +1046,19 @@ class IframeMvpTests(TestCase):
 
 
 class SettingsTests(SimpleTestCase):
+    def test_public_host_configuration_still_allows_docker_health_probe(self):
+        import json
+        import os
+        import subprocess
+        import sys
+
+        environment = {**os.environ, "DJANGO_DEBUG": "1", "DJANGO_ALLOWED_HOSTS": "inequality-perception.de"}
+        code = "import json; from django.conf import settings; from django.http import HttpRequest; request=HttpRequest(); request.META['HTTP_HOST']='127.0.0.1:8000'; print(json.dumps([settings.ALLOWED_HOSTS, request.get_host()]))"
+        hosts, host = json.loads(subprocess.check_output([sys.executable, "-c", code], env=environment, text=True))
+        self.assertIn("inequality-perception.de", hosts)
+        self.assertIn("localhost", hosts)
+        self.assertEqual(host, "127.0.0.1:8000")
+
     def test_env_bool_reads_common_truthy_and_falsey_values(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertTrue(env_bool("MISSING_BOOLEAN_FOR_TEST", True))

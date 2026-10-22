@@ -1,0 +1,14 @@
+[Unit]
+Description=Deploy CI-approved e-learning updates
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/elearning-iframe
+Environment=GIT_TERMINAL_PROMPT=0
+Environment="GIT_SSH_COMMAND=/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=15"
+ExecStart=/usr/bin/python3 /opt/elearning-iframe/ops/auto_deploy.py
+TimeoutStartSec=20min

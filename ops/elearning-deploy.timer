@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for approved e-learning updates every two minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=2min
+RandomizedDelaySec=10s
+Unit=elearning-deploy.service
+
+[Install]
+WantedBy=timers.target

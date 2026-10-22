@@ -210,8 +210,9 @@ session, not a named human.
 
 ### Deploy Or Restart
 
-Pushing to GitHub runs CI; it does not pull code onto the VM or rebuild its containers.
-Pull the reviewed changes on the VM before rebuilding:
+Pushing to `main` runs CI. With the VM updater enabled (below), the VM checks for
+new commits every two minutes and deploys only after that commit's CI succeeds.
+Without the updater, pull the reviewed changes on the VM before rebuilding:
 
 ```bash
 git pull --ff-only origin main
@@ -228,6 +229,36 @@ To restart only the web app:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d web
+```
+
+### Enable Automatic Deployment
+
+Install once on the existing VM after pulling these files into
+`/opt/elearning-iframe`:
+
+```bash
+sudo sh /opt/elearning-iframe/ops/install-auto-deploy.sh
+```
+
+The updater uses the VM's existing Git access and the public GitHub CI status.
+It needs no GitHub token or inbound webhook. It accepts only fast-forward updates
+to `main`, refuses modified tracked files or local-only commits, builds before
+replacing the running app, and records success after Docker reports healthy.
+Unsuccessful container starts restore the previous app image; database migrations
+are not reversed. A failed deployment remains eligible for a later retry.
+
+Inspect or trigger deployments:
+
+```bash
+systemctl list-timers elearning-deploy.timer
+journalctl -u elearning-deploy.service -n 100 --no-pager
+systemctl start elearning-deploy.service
+```
+
+Stop future automatic deployments:
+
+```bash
+systemctl disable --now elearning-deploy.timer
 ```
 
 ### Production Environment Variables
