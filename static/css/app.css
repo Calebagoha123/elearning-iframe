@@ -1926,8 +1926,8 @@ a.button:not(.button-secondary):not(:disabled):focus-visible { color: #fdfbf4; b
 .activity-card__head h2 { min-width: 0; overflow-wrap: anywhere; }
 .activity-card__tools { display: flex; flex: 0 0 auto; gap: 4px; }
 .activity-card__tools form { margin: 0; }
-.activity-icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--plum-ink); cursor: pointer; }
-.activity-icon svg { width: 18px; height: 18px; flex: none; }
+.activity-icon { -webkit-appearance: none; appearance: none; background-image: none; box-shadow: none; line-height: 1; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--plum-ink); cursor: pointer; }
+.activity-icon svg { display: block; width: 18px; height: 18px; flex: none; pointer-events: none; }
 .activity-icon:hover, .activity-icon:focus-visible { color: var(--plum-ink); background: #ece4ef; border-color: var(--line); }
 .activity-icon--delete { color: #b42332; }
 .activity-icon--delete:hover, .activity-icon--delete:focus-visible { color: #941b28; background: #fbe8eb; border-color: #eec5cb; }
