@@ -25,6 +25,7 @@ urlpatterns = [
     path("research/activities/housing/edit/", views.edit_housing, name="research-edit-housing"),
     path("research/activities/housing/plots/", views.research_housing_plots, name="research-housing-plots"),
     path("research/activities/<slug:activity_slug>/delete/", builder_views.delete_activity, name="research-delete-activity"),
+    path("research/activities/<slug:activity_slug>/preview/results/", builder_views.activity_preview_results, name="research-preview-results"),
     path("research/activities/new/", builder_views.new_activity, name="research-add-activity"),
     path("research/activities/<slug:activity_slug>/edit/", builder_views.activity_editor, name="research-edit-activity"),
     path("research/activities/<slug:activity_slug>/preview/", builder_views.activity_preview, name="research-preview-activity"),

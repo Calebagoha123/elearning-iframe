@@ -17,9 +17,9 @@
     {% if row.spec.type == 'place' %}
       {% for hidden in row.place_fields %}{{ hidden }}{% endfor %}
       <ul class="place-suggestions" data-place-results role="listbox" hidden></ul>
-      <small data-place-status role="status" aria-live="polite">Type a place and choose a suggestion.</small>
+      <small data-place-status role="status" aria-live="polite">{{ ui.place_prompt }}</small>
     {% endif %}
   </div>
   {% endfor %}
-  {% if group.section.repeatable %}<button type="button" class="text-link builder-remove" data-remove-entry>Remove entry</button>{% endif %}
+  {% if group.section.repeatable %}<button type="button" class="text-link builder-remove" data-remove-entry>{{ ui.remove_entry }}</button>{% endif %}
 </fieldset>

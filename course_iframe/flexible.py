@@ -11,6 +11,15 @@ from django.db import transaction
 from django.forms import BaseFormSet, formset_factory
 
 from .models import Activity, Question, Response
+from .localization import (
+    semantic,
+    translated_schema,
+    translated_activity,
+    ui_copy,
+    validate_text_variants,
+    LANGUAGE_CODES,
+    UI_COPY,
+)
 from .services import housing_schema, relationship_likert_choices
 from .nominatim import verify_place, PlaceVerificationError
 
@@ -45,7 +54,7 @@ def current_question(activity):
     return activity.questions.get(is_active=True)
 
 
-def schema_for_question(question):
+def _base_schema_for_question(question):
     if SCHEMA_KEY in question.options_json:
         schema = deepcopy(question.options_json[SCHEMA_KEY])
         for section in schema["sections"]:
@@ -124,6 +133,15 @@ def schema_for_question(question):
     }
 
 
+def schema_for_question(question, language=None):
+    schema = _base_schema_for_question(question)
+    return (
+        translated_schema(schema, language)
+        if language and language != question.activity.source_language
+        else schema
+    )
+
+
 def validate_schema(raw, published=False):
     if not isinstance(raw, dict) or not isinstance(raw.get("sections"), list):
         raise ValidationError("Add sections and questions using the activity builder.")
@@ -166,6 +184,12 @@ def validate_schema(raw, published=False):
             or "Add another entry",
             "fields": [],
         }
+        translations = validate_text_variants(
+            section.get("translations", {}),
+            {"title": 160, "instructions": 4000, "add_label": 100},
+        )
+        if translations:
+            group["translations"] = translations
         for field in section["fields"]:
             if not isinstance(field, dict):
                 raise ValidationError("Question settings are invalid.")
@@ -192,6 +216,11 @@ def validate_schema(raw, published=False):
                 "choices": [],
                 "min_value": "",
             }
+            translations = validate_text_variants(
+                field.get("translations", {}), {"label": 500, "help_text": 1000}
+            )
+            if translations:
+                spec["translations"] = translations
             if kind in CHOICE_TYPES:
                 choices = field.get("choices", [])
                 if not isinstance(choices, list) or not (
@@ -218,7 +247,26 @@ def validate_schema(raw, published=False):
                         )
                     values.add(value)
                     labels.add(option.casefold())
-                    spec["choices"].append({"value": value, "label": option})
+                    item = {"value": value, "label": option}
+                    translations = validate_text_variants(
+                        choice.get("translations", {}), {"label": 200}
+                    )
+                    if translations:
+                        item["translations"] = translations
+                    spec["choices"].append(item)
+            for language in LANGUAGE_CODES:
+                labels = [
+                    choice.get("translations", {})
+                    .get(language, {})
+                    .get("label", "")
+                    .casefold()
+                    for choice in spec["choices"]
+                ]
+                labels = [label for label in labels if label]
+                if len(labels) != len(set(labels)):
+                    raise ValidationError(
+                        f"{label}: translated answer options must be different."
+                    )
             if kind in NUMERIC_TYPES and field.get("min_value") not in (None, ""):
                 try:
                     minimum = Decimal(str(field["min_value"]))
@@ -258,11 +306,13 @@ def version_questions(previous, incoming):
     for section in result["sections"]:
         for field in section["fields"]:
             before = old.get(field["id"])
-            definition = {
-                key: value for key, value in field.items() if key != "version"
-            }
+            definition = semantic(
+                {key: value for key, value in field.items() if key != "version"}
+            )
             old_definition = (
-                {key: value for key, value in before.items() if key != "version"}
+                semantic(
+                    {key: value for key, value in before.items() if key != "version"}
+                )
                 if before
                 else None
             )
@@ -291,9 +341,10 @@ class SchemaEditorForm(forms.Form):
 class SectionResponseForm(forms.Form):
     response_id = forms.IntegerField(required=False, widget=forms.HiddenInput)
 
-    def __init__(self, *args, section, **kwargs):
+    def __init__(self, *args, section, ui=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.section = section
+        self.ui = ui or UI_COPY["en"]
         for spec in section["fields"]:
             key, kind = spec["id"], spec["type"]
             common = dict(
@@ -304,14 +355,14 @@ class SectionResponseForm(forms.Form):
             choices = [(c["value"], c["label"]) for c in spec.get("choices", [])]
             if kind in ("choice", "likert"):
                 if spec.get("allow_other"):
-                    choices.append(("__other__", "Other"))
+                    choices.append(("__other__", self.ui["other"]))
                     self.fields[key + "__other"] = forms.CharField(
-                        label="Other answer", required=False, max_length=200
+                        label=self.ui["other_answer"], required=False, max_length=200
                     )
                 field = forms.ChoiceField(
                     choices=choices
                     if kind == "likert"
-                    else [("", "Choose an answer")] + choices,
+                    else [("", self.ui["choose"])] + choices,
                     widget=forms.RadioSelect if kind == "likert" else forms.Select,
                     **common,
                 )
@@ -343,6 +394,9 @@ class SectionResponseForm(forms.Form):
                     else forms.TextInput,
                     **common,
                 )
+            if kind in {"decimal", "currency_eur"}:
+                field.widget.attrs["inputmode"] = "decimal"
+            field.error_messages["required"] = self.ui["required"]
             self.fields[key] = field
             if kind == "place":
                 field.widget.attrs["data-place-input"] = ""
@@ -360,7 +414,7 @@ class SectionResponseForm(forms.Form):
                 and data.get(key) == "__other__"
                 and not data.get(key + "__other")
             ):
-                self.add_error(key + "__other", "Describe your other answer.")
+                self.add_error(key + "__other", self.ui["describe_other"])
             if spec["type"] == "place" and data.get(key):
                 try:
                     verified = verify_place(
@@ -368,9 +422,7 @@ class SectionResponseForm(forms.Form):
                     )
                     data[key + "__place_meta"] = verified
                 except (PlaceVerificationError, ValueError):
-                    self.add_error(
-                        key, "Pick a verified place from the dropdown suggestions."
-                    )
+                    self.add_error(key, self.ui["place_error"])
         return data
 
     def field_rows(self):
@@ -434,8 +486,9 @@ def decoded_entry(response):
     return section["id"], answers
 
 
-def section_formsets(question, participant=None, data=None):
-    schema = schema_for_question(question)
+def section_formsets(question, participant=None, data=None, language=None):
+    language = language or question.activity.source_language
+    schema = schema_for_question(question, language)
     initial = {}
     if participant:
         for response in Response.objects.filter(
@@ -476,7 +529,10 @@ def section_formsets(question, participant=None, data=None):
             data,
             initial=existing_rows,
             prefix="section-" + section["id"],
-            form_kwargs={"section": section},
+            form_kwargs={
+                "section": section,
+                "ui": ui_copy(question.activity, language),
+            },
         )
         groups.append({"section": section, "formset": formset})
     return groups
@@ -502,7 +558,8 @@ def encoded_answers(form):
 
 
 @transaction.atomic
-def save_entries(activity, participant, question, groups, revision):
+def save_entries(activity, participant, question, groups, revision, language=None):
+    language = language or activity.source_language
     current = Activity.objects.select_for_update().get(pk=activity.pk)
     if (
         current.deleted_at is not None
@@ -538,7 +595,14 @@ def save_entries(activity, participant, question, groups, revision):
                     )
                 response = existing[key]
                 response.payload = payload
-                response.save(update_fields=["payload", "updated_at"])
+                response.language = language
+                response.display_json = {
+                    "section": semantic(section),
+                    "activity_title": translated_activity(activity, language).title,
+                }
+                response.save(
+                    update_fields=["payload", "updated_at", "language", "display_json"]
+                )
                 seen.add(key)
             else:
                 response = Response.objects.create(
@@ -547,6 +611,11 @@ def save_entries(activity, participant, question, groups, revision):
                     question=question,
                     question_version=question.version,
                     payload=payload,
+                    language=language,
+                    display_json={
+                        "section": semantic(section),
+                        "activity_title": translated_activity(activity, language).title,
+                    },
                 )
             retained.add(response.pk)
     Response.objects.filter(participant=participant, question=question).exclude(
@@ -565,10 +634,12 @@ def answer_label(spec, value):
     return labels.get(str(value), str(value))
 
 
-def response_answers(response):
+def response_answers(response, language=None):
     section_id, answers = decoded_entry(response)
-    schema = schema_for_question(response.question)
+    schema = schema_for_question(response.question, language)
     section = next((s for s in schema["sections"] if s["id"] == section_id), None)
+    if language is None and response.display_json.get("section"):
+        section = response.display_json["section"]
     return (
         [
             {
@@ -591,6 +662,9 @@ def export_payload(response=None, question=None):
         section_id, answers = decoded_entry(response)
     else:
         section_id, answers = "", {}
+    if response and response.display_json.get("section"):
+        snapshot = response.display_json["section"]
+        schema = {"sections": [snapshot]}
     output = {"section_id": section_id}
     for section in schema["sections"]:
         for spec in section["fields"]:

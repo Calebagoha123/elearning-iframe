@@ -4,12 +4,13 @@
 {% block content %}
 <header class="topbar"><div><p class="eyebrow">Researcher · {{ activity.title }}</p><h1>Plots</h1></div><a class="text-link" href="{% url 'research-dashboard' %}">← Dashboard</a></header>
 {% include "research/_activity_nav.html" %}
+<form method="get" class="plot-language"><label>Chart language<select name="lang">{% for version in plot_languages %}<option value="{{ version.code }}"{% if version.code == language %} selected{% endif %}>{{ version.name }}</option>{% endfor %}</select></label><button class="button button-secondary button-small">View</button></form>
 <div class="plot-workspace">
   <aside class="panel plot-builder">
     <h2>Plot builder</h2>
     <p class="muted">Build charts for this activity. Check Show to students on any saved chart to share it.</p>
     <form method="post" class="form-stack" data-plot-builder>
-      {% csrf_token %}{{ plot_form.non_field_errors }}
+      {% csrf_token %}<input type="hidden" name="language" value="{{ language }}">{{ plot_form.non_field_errors }}
       <input type="hidden" name="question_id" value="{{ question.pk }}">
       <input type="hidden" name="highlight" value="{{ highlight_name }}">
       <label for="{{ plot_form.section.id_for_label }}">Section{{ plot_form.section }}{{ plot_form.section.errors }}</label>
@@ -34,7 +35,7 @@
     <header class="plot-preview-header"><div><h2>{% if preview_only %}Unsaved chart preview{% else %}Researcher view{% endif %}</h2><p class="muted">{{ participant_count }} {% if using_synthetic %}example participants{% else %}participants{% endif %} · {{ response_count }} {% if using_synthetic %}generated entries{% else %}entries{% endif %} · Activity version {{ question.version }}</p></div></header>
     {% if preview_only %}<a class="text-link preview-return" href="{{ activity_plots_url }}">← Back to saved charts</a><p class="message">Preview only.{% if has_synthetic %} Unanswered questions use synthetic examples, labelled on each chart.{% endif %} Add chart to keep this configuration.</p>{% endif %}
     {% if not preview_only %}<p class="muted">All saved charts are shown here. Students see only the charts checked Show to students, using collected responses.</p>{% endif %}
-    {% if focus_choices and not preview_only %}<form method="get" class="plot-highlight"><label for="plot-highlight">Highlight a respondent<select id="plot-highlight" name="highlight"><option value="">None · cohort only</option>{% for name in focus_choices %}<option value="{{ name }}"{% if name == highlight_name %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label><button class="button button-secondary button-small" type="submit">Highlight</button></form>{% endif %}
+    {% if focus_choices and not preview_only %}<form method="get" class="plot-highlight"><input type="hidden" name="lang" value="{{ language }}"><label for="plot-highlight">Highlight a respondent<select id="plot-highlight" name="highlight"><option value="">None · cohort only</option>{% for name in focus_choices %}<option value="{{ name }}"{% if name == highlight_name %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label><button class="button button-secondary button-small" type="submit">Highlight</button></form>{% endif %}
     {% include "course_iframe/_flexible_plots.html" %}
   </section>
 </div>

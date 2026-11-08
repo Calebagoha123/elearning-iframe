@@ -7,6 +7,13 @@
 
 <form method="post" class="form-stack" data-schema-editor>
   {% csrf_token %}
+  <section class="language-editor" aria-label="Language versions">
+    <label>Editing language<select data-editor-language></select></label>
+    <label>Add language<select data-new-language></select></label>
+    <button class="button button-secondary button-small" type="button" data-add-language>Add language</button>
+    <p class="muted" data-language-status></p>
+    <p class="muted" data-language-structure hidden>Question structure is shared. Switch to the original language to add, remove or reorder questions and answer options.</p>
+  </section>
   <section class="panel form-stack">{% include "research/_activity_settings.html" %}</section>
   {{ schema_form.schema }}
   {% if schema_form.errors %}<div class="message message-error" role="alert">{{ schema_form.errors }}</div>{% endif %}
@@ -49,5 +56,6 @@
 </template>
 {{ builder_schema|json_script:"builder-schema" }}
 {{ field_types|json_script:"builder-field-types" }}
+{{ language_editor|json_script:"language-editor-config" }}
 <script src="{% static 'js/flexible_editor.js' %}" defer></script>
 {% endblock %}

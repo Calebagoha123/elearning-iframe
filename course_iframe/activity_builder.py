@@ -5,6 +5,7 @@ from django.db import transaction
 from django.urls import reverse
 
 from .models import Activity, Question
+from .localization import LANGUAGES, language_url, ui_copy, validate_activity_variants
 
 from .services import HOUSING_QUESTION_SLUG, RELATIONSHIP_QUESTION_SLUG
 
@@ -32,8 +33,9 @@ ACTIVITY_TYPES = {
 }
 
 
-def activity_links(activity):
-    return {
+def activity_links(activity, language=None):
+    language = language or activity.source_language
+    links = {
         "activity": activity,
         "activity_form_url": reverse("activity-student", args=[activity.slug]),
         "activity_results_url": reverse("activity-results", args=[activity.slug]),
@@ -46,6 +48,15 @@ def activity_links(activity):
             "research-preview-activity", args=[activity.slug]
         ),
     }
+    for key in (
+        "activity_form_url",
+        "activity_results_url",
+        "activity_preview_url",
+        "activity_plots_url",
+    ):
+        links[key] = language_url(links[key], language, activity.source_language)
+    links.update(language=language, ui=ui_copy(activity, language))
+    return links
 
 
 def activity_question(activity):
@@ -53,10 +64,20 @@ def activity_question(activity):
 
 
 class NewActivityForm(forms.ModelForm):
+    source_language = forms.ChoiceField(
+        label="Original language", choices=LANGUAGES, initial="en", required=False
+    )
+
+    def clean_source_language(self):
+        return self.cleaned_data.get("source_language") or "en"
+
     class Meta:
         model = Activity
-        fields = ["title", "description"]
-        labels = {"description": "Course instructions"}
+        fields = ["title", "description", "source_language"]
+        labels = {
+            "description": "Course instructions",
+            "source_language": "Original language",
+        }
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
     @transaction.atomic
@@ -83,11 +104,18 @@ class NewActivityForm(forms.ModelForm):
 
 
 class ActivitySettingsForm(forms.ModelForm):
+    source_language = forms.ChoiceField(
+        label="Original language",
+        choices=LANGUAGES,
+        required=False,
+        help_text="Set this to the language of the original text before adding other language versions.",
+    )
     revision = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+    activity_translations = forms.JSONField(widget=forms.HiddenInput, required=False)
 
     class Meta:
         model = Activity
-        fields = ["title", "description", "is_active"]
+        fields = ["title", "description", "is_active", "source_language"]
         labels = {
             "description": "Course instructions",
             "is_active": "Published — students can open this activity",
@@ -96,7 +124,49 @@ class ActivitySettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.original_source_language = self.instance.source_language
         self.initial["revision"] = self.instance.revision
+        self.initial["activity_translations"] = self.instance.translations
+
+    def clean_source_language(self):
+        return self.cleaned_data.get("source_language") or self.original_source_language
+
+    def clean(self):
+        data = super().clean()
+        variants = (
+            data.get("activity_translations", self.instance.translations)
+            if self.add_prefix("activity_translations") in self.data
+            else self.instance.translations
+        )
+        if data.get(
+            "source_language", self.original_source_language
+        ) != self.original_source_language and any(
+            code != self.original_source_language for code in variants
+        ):
+            self.add_error(
+                "source_language",
+                "Other language versions already exist. Use the editing-language selector to change their text; the original language cannot be reassigned.",
+            )
+        return data
+
+    def clean_activity_translations(self):
+        return validate_activity_variants(
+            self.cleaned_data.get("activity_translations") or {}
+        )
+
+    def save(self, commit=True):
+        activity = super().save(commit=False)
+        if self.add_prefix("activity_translations") in self.data:
+            activity.translations = self.cleaned_data["activity_translations"]
+        if activity.source_language != self.original_source_language:
+            original_ui = activity.translations.pop(
+                self.original_source_language, {}
+            ).get("ui", {})
+            if original_ui:
+                activity.translations[activity.source_language] = {"ui": original_ui}
+        if commit:
+            activity.save()
+        return activity
 
 
 class ActivityChanged(Exception):

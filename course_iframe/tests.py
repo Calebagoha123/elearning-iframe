@@ -226,8 +226,8 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("relationship-activity"))
 
-        self.assertContains(response, 'class="relationship-other"', html=False)
-        self.assertContains(response, 'data-add-relationship', html=False)
+        self.assertContains(response, "data-other-answer", html=False)
+        self.assertContains(response, "data-add-entry", html=False)
         self.assertNotContains(response, 'data-save-relationships disabled', html=False)
         self.assertContains(response, 'class="likert-scale"', html=False)
         self.assertContains(response, "Lower than theirs")
@@ -327,9 +327,9 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("relationship-results"))
 
-        self.assertContains(response, "Relationship results")
+        self.assertContains(response, "Relationship survey")
         self.assertContains(response, "Friend")
-        self.assertContains(response, "Income comparison")
+        self.assertContains(response, "Your income")
         self.assertNotContains(response, "Results unlock")
 
     def test_relationship_results_show_many_relationships_from_one_participant(self):
@@ -349,7 +349,7 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("relationship-results"))
 
-        self.assertContains(response, "Relationship results")
+        self.assertContains(response, "Relationship survey")
         self.assertContains(response, "Friend")
         self.assertNotContains(response, "Results unlock")
 
@@ -359,7 +359,7 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("relationship-results"))
 
-        self.assertContains(response, "Relationship results")
+        self.assertContains(response, "Relationship survey")
         self.assertContains(response, "Friend")
 
     def test_relationship_edit_starts_new_result_version(self):
@@ -537,10 +537,10 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("housing-results"))
 
-        self.assertContains(response, "Housing comparison")
+        self.assertContains(response, "Housing data entry")
         self.assertContains(response, "Monthly rent")
         self.assertContains(response, "Number of rooms")
-        self.assertContains(response, "Cohort entries")
+        self.assertContains(response, "data-flexible-scatter")
 
     def test_housing_submission_redirects_back_to_entry_form(self):
         self.enter_iframe()
@@ -917,8 +917,8 @@ class IframeMvpTests(TestCase):
 
         response = self.client.get(reverse("housing-activity"))
 
-        self.assertContains(response, 'data-place-input="district"')
-        self.assertContains(response, 'data-currency="eur"')
+        self.assertContains(response, 'data-place-input=""')
+        self.assertContains(response, "flexible-answer--currency_eur")
         self.assertContains(response, 'inputmode="decimal"')
         self.assertContains(response, "€")
 

@@ -15,7 +15,9 @@ class Course(models.Model):
 
 
 class Participant(models.Model):
-    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="participants")
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE, related_name="participants"
+    )
     participant_id = models.CharField(max_length=160)
     optional_username = models.CharField(max_length=160, blank=True, null=True)
     has_research_consent = models.BooleanField(default=False)
@@ -40,6 +42,17 @@ class Activity(models.Model):
     title = models.CharField(max_length=160)
     activity_type = models.CharField(max_length=80)
     description = models.TextField(blank=True)
+    source_language = models.CharField(
+        max_length=8,
+        default="en",
+        choices=[
+            ("en", "English"),
+            ("nl", "Nederlands"),
+            ("de", "Deutsch"),
+            ("fr", "Français"),
+        ],
+    )
+    translations = models.JSONField(default=dict, blank=True)
     # Retained for compatibility with existing databases; landing pages are no longer used.
     entry_settings = models.JSONField(default=dict, blank=True)
     revision = models.PositiveIntegerField(default=1)
@@ -67,7 +80,9 @@ class Question(models.Model):
         (FIELD_ACTIVITY, "Activity questions"),
     ]
 
-    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="questions")
+    activity = models.ForeignKey(
+        Activity, on_delete=models.CASCADE, related_name="questions"
+    )
     slug = models.SlugField(max_length=80)
     question_text = models.TextField()
     field_type = models.CharField(max_length=40, choices=FIELD_TYPES)
@@ -95,11 +110,19 @@ class Question(models.Model):
 
 
 class Response(models.Model):
-    participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name="responses")
-    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="responses")
-    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="responses")
+    participant = models.ForeignKey(
+        Participant, on_delete=models.CASCADE, related_name="responses"
+    )
+    activity = models.ForeignKey(
+        Activity, on_delete=models.CASCADE, related_name="responses"
+    )
+    question = models.ForeignKey(
+        Question, on_delete=models.PROTECT, related_name="responses"
+    )
     question_version = models.PositiveIntegerField()
     payload = models.JSONField()
+    language = models.CharField(max_length=8, default="en")
+    display_json = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -115,7 +138,9 @@ class Response(models.Model):
 
 
 class ConsentRecord(models.Model):
-    participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name="consent_records")
+    participant = models.ForeignKey(
+        Participant, on_delete=models.CASCADE, related_name="consent_records"
+    )
     consent_type = models.CharField(max_length=80)
     consented = models.BooleanField()
     consented_date = models.DateTimeField(auto_now_add=True)
@@ -139,4 +164,6 @@ class ExportLog(models.Model):
         ordering = ["-created_date"]
 
     def __str__(self):
-        return f"{self.export_type} {self.file_format} {self.created_date:%Y-%m-%d %H:%M}"
+        return (
+            f"{self.export_type} {self.file_format} {self.created_date:%Y-%m-%d %H:%M}"
+        )

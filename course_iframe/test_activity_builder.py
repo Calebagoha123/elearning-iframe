@@ -365,7 +365,10 @@ class FlexibleActivityTests(TestCase):
         page = self.client.get(reverse("research-add-activity"))
         self.assertNotContains(page, "Link name")
         self.assertNotContains(page, "Choose an activity format")
-        self.assertEqual(set(page.context["form"].fields), {"title", "description"})
+        self.assertEqual(
+            set(page.context["form"].fields),
+            {"title", "description", "source_language"},
+        )
         activity = self.create()
         first_slug = activity.slug
         self.assertTrue(first_slug.startswith("course-activity-"))
@@ -581,7 +584,7 @@ class FlexibleActivityTests(TestCase):
         self.assertEqual(response.context["response_count"], 3)
         self.assertEqual(response.context["participant_count"], 1)
         self.assertEqual(len(response.context["scatter_points"]), 2)
-        self.assertEqual(response.context["stacked"]["title"], "Rating by category")
+        self.assertEqual(response.context["stacked"]["title"], "Rating by Category")
         self.assertTrue(response.context["distributions"])
         self.assertTrue(response.context["numeric_summaries"])
         self.assertTrue(response.context["word_clouds"])
@@ -787,7 +790,7 @@ class FlexibleActivityTests(TestCase):
             "section-places-0-rating": "2",
         }
         url = reverse("activity-student", args=[activity.slug])
-        self.assertContains(student.post(url, data), "verified place")
+        self.assertContains(student.post(url, data), "location from the suggestions")
         data.update(
             {
                 "section-places-0-place__osm_type": "relation",
@@ -805,7 +808,10 @@ class FlexibleActivityTests(TestCase):
         url = reverse("research-preview-activity", args=[activity.slug])
         response = self.client.get(url)
         self.assertContains(response, "data-preview")
-        self.assertEqual(self.client.post(url, {}).status_code, 405)
+        self.assertEqual(self.client.post(url, {}).status_code, 302)
+        result = self.client.post(url, self.answers(activity))
+        self.assertEqual(result.status_code, 200)
+        self.assertTemplateUsed(result, "course_iframe/flexible_results.html")
         self.assertFalse(activity.responses.exists())
         for route in [
             "research-edit-activity",

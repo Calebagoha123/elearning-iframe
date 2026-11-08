@@ -2,16 +2,23 @@
 
 {{ activity_settings.non_field_errors }}
 <input type="hidden" name="activity_settings" value="1">
+{{ activity_settings.activity_translations }}{{ activity_settings.activity_translations.errors }}
 {{ activity_settings.revision }}{{ activity_settings.revision.errors }}
 <fieldset class="form-stack"><legend>Activity details</legend>
 {% for field in activity_settings.visible_fields %}
-  <div class="builder-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>
+  <div class="builder-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>
 {% endfor %}
 <p class="muted">Uncheck Published to keep a draft or close student access. Saved responses are retained.</p>
 </fieldset>
+<details class="activity-embed-details" data-student-labels>
+  <summary>Student button labels</summary>
+  <div class="form-stack">{% for item in ui_editable %}<label>{{ item.label }}<input data-ui-label="{{ item.key }}" maxlength="200" placeholder="Use the standard label"></label>{% endfor %}</div>
+</details>
 <details class="activity-embed-details">
   <summary>Moodle link and embed code</summary>
   <div class="form-stack">
+    <label>Link language<select data-share-language>{% for version in language_versions %}<option value="{{ version.code }}"{% if version.missing %} disabled{% endif %}>{{ version.name }}{% if version.missing %} · translation incomplete{% endif %}</option>{% endfor %}</select></label>
+    <small class="muted">Save translations before sharing. Only complete language versions have public links.</small>
     <label for="embed-url">Student activity link</label><input id="embed-url" readonly value="{{ embed_url }}">
     <button type="button" class="button button-secondary button-small" data-copy="embed-url">Copy link</button>
     <label for="embed-code">Embed code</label><textarea id="embed-code" readonly rows="3">{{ embed_code }}</textarea>

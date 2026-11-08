@@ -85,7 +85,22 @@ sessions receive a random participant ID; an existing session identity is reused
 across activities. Clearing cookies or changing browser/device creates a new
 identity. Activity/question definitions and responses remain in PostgreSQL.
 Questions and instructions are displayed exactly as entered; there is no Google
-Translate or other automatic translation service.
+Translate or other automatic translation service. Choose the original language
+when creating an activity (or correct it before adding translations). In the
+editor, **Add language** creates an English, Dutch, German, or French version.
+Switch **Editing language** to enter its activity title, instructions, section
+text, question text, hints, choice/scale labels, and optional student button
+labels. Question types, answer codes, order, and required settings are shared.
+Incomplete translations can be saved as drafts and tried in staff preview; public
+links become available only when all original text has a translation. Save, then
+choose **Link language** to copy that version's Moodle URL or embed code. All
+language links can circulate at once and collect into the same response pool.
+Translation-only edits keep question versions and existing answers. Saved
+responses record the language and displayed wording for historical review and CSV
+export. Interface labels and validation messages use bundled translations.
+
+Public activity links and staff student preview use the same forms and charts.
+Preview adds a staff navigation banner and never saves trial answers.
 
 Every activity has its own student results page, researcher response review,
 cohort plots, and CSV filter. Choice and Likert questions produce distributions;
@@ -126,7 +141,7 @@ question version. Existing responses retain their original schema and wording.
 The shared builder can reuse answers for unchanged questions from earlier activity
 versions; changed question definitions need fresh answers. The latest submitted
 version for each student and section takes precedence, preventing duplicate counts.
-Legacy activity forms continue to use their active question version.
+The original housing and relationship links use the same shared student renderer.
 
 Coordinate wording/schema changes before live teaching where possible. CSV exports
 include historical responses and a `question_version` column.

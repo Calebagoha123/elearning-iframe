@@ -1958,3 +1958,9 @@ a.button:not(.button-secondary):not(:disabled):focus-visible { color: #fdfbf4; b
 .text-link.external-link { border-bottom: none; padding-bottom: 0; }
 .text-link.external-link .external-link__label { border-bottom: 2px solid var(--sun); padding-bottom: 2px; }
 .text-link.external-link:hover .external-link__label { border-bottom-color: var(--plum); }
+
+.language-editor { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.language-editor label { display: grid; gap: 6px; min-width: 180px; }
+.language-editor p { flex-basis: 100%; margin: 0; }
+.plot-language { display: flex; align-items: end; gap: 12px; margin-bottom: 24px; }
+.plot-language label { display: grid; gap: 6px; }

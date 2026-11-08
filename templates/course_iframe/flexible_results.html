@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ activity.title }} · Results{% endblock %}
+{% block title %}{{ activity.title }} · {{ ui.results }}{% endblock %}
 {% block content %}
-<header class="topbar"><div><p class="eyebrow">{{ activity.title }}</p><h1>Your results</h1></div><span class="identity">ID {{ participant.participant_id }}</span></header>
-<nav class="form-actions"><a class="button" href="{{ activity_form_url }}">Edit answers</a><a class="text-link" href="{% url 'activity-landing' %}">All activities</a></nav>
-<section class="panel"><h2>Your saved entries</h2>{% for entry in own_entries %}<article class="response-review-row">{% if not entry.response.question.is_active %}<small class="muted">Earlier question version · {{ entry.response.question_version }}</small>{% endif %}<dl class="response-values">{% for answer in entry.answers %}<div><dt>{{ answer.label }}</dt><dd>{{ answer.value }}</dd></div>{% endfor %}</dl></article>{% empty %}<p class="muted">No saved answers yet.</p>{% endfor %}</section>
-<p class="muted">Cohort comparison · {{ participant_count }} participants · Current question version</p>
+<header class="topbar"><h1>{{ activity.title }}</h1></header>
+{% if preview %}<a class="text-link preview-return" href="{{ activity_edit_url }}">← Back to activity</a><p class="message">Student preview · Test answers are not saved.{% if translation_incomplete %} This translation is incomplete; missing text uses the original language.{% endif %} Charts use the same settings as the student page.</p>{% endif %}
+<nav class="form-actions"><a class="button" href="{{ activity_form_url }}">{{ ui.edit }}</a></nav>
+{% if own_entries %}<details class="panel"><summary>{{ ui.your_answers }}</summary>{% for entry in own_entries %}<article class="response-review-row"><dl class="response-values">{% for answer in entry.answers %}<div><dt>{{ answer.label }}</dt><dd>{{ answer.value|default_if_none:"—" }}</dd></div>{% endfor %}</dl></article>{% endfor %}</details>{% endif %}
 {% include "course_iframe/_flexible_plots.html" %}
 {% endblock %}

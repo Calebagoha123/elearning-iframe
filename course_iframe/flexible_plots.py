@@ -19,6 +19,7 @@ from .flexible import (
     schema_for_question,
 )
 from .models import Response
+from .localization import semantic, ui_copy
 
 COLORS = [
     "#0072b2",
@@ -32,9 +33,9 @@ COLORS = [
 ]
 
 
-def field_catalog(question):
+def field_catalog(question, language=None):
     result = {}
-    for section in schema_for_question(question)["sections"]:
+    for section in schema_for_question(question, language)["sections"]:
         for field in section["fields"]:
             result[field["id"]] = {
                 **field,
@@ -67,10 +68,10 @@ class PlotSettingsForm(forms.Form):
     category = forms.ChoiceField(label="Categories for stacked chart", required=False)
     scale = forms.ChoiceField(label="Likert question for stacked chart", required=False)
 
-    def __init__(self, *args, question, **kwargs):
+    def __init__(self, *args, question, language=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.catalog = field_catalog(question)
-        self.sections = schema_for_question(question)["sections"]
+        self.catalog = field_catalog(question, language)
+        self.sections = schema_for_question(question, language)["sections"]
         self.fields["section"].choices = [("", "All sections")] + [
             (s["id"], s["title"] or f"Section {i + 1}")
             for i, s in enumerate(self.sections)
@@ -352,7 +353,7 @@ def _plot_entries(question, participant=None, *, synthetic=False):
             if not current or not previous or section != current["section_id"]:
                 continue
             if all(
-                current.get(attr) == previous.get(attr)
+                semantic(current.get(attr)) == semantic(previous.get(attr))
                 for attr in (
                     "version",
                     "type",
@@ -375,8 +376,10 @@ def _plot_entries(question, participant=None, *, synthetic=False):
     return entries, participants
 
 
-def _single_plot_context(question, *, settings, entries_data):
-    catalog = field_catalog(question)
+def _single_plot_context(question, *, settings, entries_data, language=None):
+    language = language or question.activity.source_language
+    catalog = field_catalog(question, language)
+    ui = ui_copy(question.activity, language)
     config = settings
     entries, participants = entries_data
     distributions, numeric_summaries, word_clouds = [], [], []
@@ -607,7 +610,7 @@ def _single_plot_context(question, *, settings, entries_data):
                 }
             )
         stacked = {
-            "title": scale["label"] + " by " + category["label"].lower(),
+            "title": scale["label"] + " " + ui["by"] + " " + category["label"],
             "rows": rows,
             "legend": [{"label": c, "color": colors[c]} for c in categories],
         }
@@ -707,10 +710,21 @@ def plot_context(
     synthetic=False,
     researcher=False,
     include_library=True,
+    language=None,
+    preview_entries=None,
 ):
+    language = language or question.activity.source_language
     entries_data = _plot_entries(question, participant, synthetic=synthetic)
+    if preview_entries:
+        entries_data = (
+            entries_data[0] + preview_entries,
+            entries_data[1] | {"preview"},
+        )
     context = _single_plot_context(
-        question, settings=default_plot_settings(question), entries_data=entries_data
+        question,
+        settings=default_plot_settings(question),
+        entries_data=entries_data,
+        language=language,
     )
     cards = _chart_cards(context)
     if include_library:
@@ -724,6 +738,7 @@ def plot_context(
                             question,
                             settings=form.cleaned_data,
                             entries_data=entries_data,
+                            language=language,
                         )
                     )
                 )

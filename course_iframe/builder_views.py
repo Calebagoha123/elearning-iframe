@@ -200,7 +200,7 @@ def legacy_activity_editor(request, activity_slug):
 
 
 @views.researcher_required
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def activity_preview(request, activity_slug):
     from . import flexible_views
 
@@ -307,3 +307,10 @@ def delete_activity(request, activity_slug):
     activity.revision += 1
     activity.save(update_fields=["deleted_at", "revision"])
     return redirect("research-dashboard")
+
+
+@views.researcher_required
+@require_http_methods(["GET"])
+def activity_preview_results(request, activity_slug):
+    from . import flexible_views
+    return flexible_views.results(request, None, get_activity(activity_slug), preview=True)

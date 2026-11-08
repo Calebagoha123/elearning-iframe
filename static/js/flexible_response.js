@@ -1,7 +1,7 @@
 (() => {
   const form = document.querySelector('[data-flexible-response]');
   if (!form) return;
-  if (form.hasAttribute('data-preview')) form.addEventListener('submit', event => event.preventDefault());
+  const ui = JSON.parse(document.getElementById('student-ui-copy').textContent);
   const syncOther = row => row.querySelectorAll('[data-other-answer]').forEach(other => {
     const field = other.closest('.flexible-answer');
     other.hidden = field.querySelector('select')?.value !== '__other__';
@@ -58,7 +58,7 @@
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        status.textContent = 'Searching places…';
+        status.textContent = ui.searching;
         const url = new URL('https://nominatim.openstreetmap.org/search');
         url.search = new URLSearchParams({q: query, format: 'json', limit: '5'});
         const response = await fetch(url, {signal: controller.signal});
@@ -73,14 +73,14 @@
           button.addEventListener('click', () => {
             input.value = match.display_name;
             ['osm_type', 'osm_id', 'display_name'].forEach(suffix => { field.querySelector(`[name$="__${suffix}"]`).value = match[suffix]; });
-            results.hidden = true; status.textContent = 'Place selected.'; input.focus();
+            results.hidden = true; status.textContent = ui.place_selected; input.focus();
           });
           item.appendChild(button); results.appendChild(item);
         });
         results.hidden = !matches.length;
-        status.textContent = matches.length ? 'Choose a place from the suggestions.' : 'No matching places found.';
+        status.textContent = matches.length ? ui.choose_place : ui.no_places;
       } catch (error) {
-        if (error.name !== 'AbortError') status.textContent = 'Place search is unavailable. Try again shortly.';
+        if (error.name !== 'AbortError') status.textContent = ui.search_unavailable;
       }
     }, 350);
     pending.set(input, {timer, controller});

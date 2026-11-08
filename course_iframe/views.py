@@ -64,6 +64,7 @@ BASE_CSV_COLUMNS = [
     "question_text",
     "question_version",
     "created_at",
+    "response_language",
 ]
 
 RELATIONSHIP_CSV_COLUMNS = [
@@ -176,6 +177,12 @@ def activity_iframe_entry(request, activity_slug):
             Activity, slug=activity_slug, is_active=True, deleted_at__isnull=True,
             activity_type__in=["housing_survey", "relationship_survey", "builder"],
         )
+    language = None
+    if activity_slug != "summary":
+        from .localization import requested_language
+        from .flexible import schema_for_question
+        activity = Activity.objects.get(slug=activity_slug)
+        language = requested_language(request, activity, schema_for_question(activity.questions.get(is_active=True)))
     participant = participant_from_session(request)
     if participant is None:
         from uuid import uuid4
@@ -183,7 +190,8 @@ def activity_iframe_entry(request, activity_slug):
         remember_participant(request, participant)
     if activity_slug == "summary":
         return redirect("student-summary")
-    return redirect("activity-student", activity_slug=activity_slug)
+    from .localization import language_url
+    return redirect(language_url(reverse("activity-student", args=[activity_slug]), language, activity.source_language))
 
 
 
@@ -215,7 +223,7 @@ def _activity_redirect(slug, original_slug, legacy_route, route):
 @require_http_methods(["GET", "POST"])
 def relationship_activity(request, participant, activity_slug=RELATIONSHIP_SLUG):
     activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
-    if activity.activity_type == "builder":
+    if activity.activity_type == "builder" or request.method == "GET" or "revision" in request.POST:
         from . import flexible_views
         return flexible_views.student(request, participant, activity)
     question = _student_question(activity_slug, RELATIONSHIP_QUESTION_SLUG)
@@ -308,29 +316,15 @@ def _relationship_chart_context(question, participant, mode=None):
 @student_required
 def relationship_results(request, participant, activity_slug=RELATIONSHIP_SLUG):
     activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
-    if activity.activity_type == "builder" or "visualizations" in activity.questions.get(is_active=True).options_json:
-        from . import flexible_views
-        return flexible_views.results(request, participant, activity)
-    question = _student_question(activity_slug, RELATIONSHIP_QUESTION_SLUG)
-    count = participant_count_for_question(question)
-    chart_context = _relationship_chart_context(question, participant)
-    return render(
-        request,
-        "course_iframe/relationship_results.html",
-        {
-            **_activity_context(question),
-            "participant": participant,
-            "count": count,
-            **chart_context,
-        },
-    )
+    from . import flexible_views
+    return flexible_views.results(request, participant, activity)
 
 
 @student_required
 @require_http_methods(["GET", "POST"])
 def housing_activity(request, participant, activity_slug=HOUSING_SLUG):
     activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
-    if activity.activity_type == "builder":
+    if activity.activity_type == "builder" or request.method == "GET" or "revision" in request.POST:
         from . import flexible_views
         return flexible_views.student(request, participant, activity)
     question = _student_question(activity_slug, HOUSING_QUESTION_SLUG)
@@ -401,24 +395,8 @@ def _housing_chart_context(question, participant, include_identity=False):
 @student_required
 def housing_results(request, participant, activity_slug=HOUSING_SLUG):
     activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True)
-    if activity.activity_type == "builder" or "visualizations" in activity.questions.get(is_active=True).options_json:
-        from . import flexible_views
-        return flexible_views.results(request, participant, activity)
-    question = _student_question(activity_slug, HOUSING_QUESTION_SLUG)
-    count = participant_count_for_question(question)
-    chart_context = _housing_chart_context(question, participant)
-    has_your_points = any(point["is_yours"] for point in chart_context["payloads"])
-    return render(
-        request,
-        "course_iframe/housing_results.html",
-        {
-            **_activity_context(question),
-            "participant": participant,
-            "count": count,
-            "has_your_points": has_your_points,
-            **chart_context,
-        },
-    )
+    from . import flexible_views
+    return flexible_views.results(request, participant, activity)
 
 
 @student_required
@@ -683,9 +661,10 @@ def research_export_csv(request):
             [
                 item.participant.participant_id,
                 item.activity.slug,
-                item.question.question_text,
+                item.display_json.get("activity_title", item.question.question_text),
                 item.question_version,
                 item.created_at.isoformat(),
+                item.language,
             ]
             + [payload.get(column, "") for column in payload_columns]
         )

@@ -30,7 +30,7 @@
     points.sort((a,b) => Number(a.is_yours)-Number(b.is_yours)).forEach(point => {
       const circle = make('circle', {cx:x(point.x),cy:y(point.y),r:point.is_yours ? 6 : 4.5,fill:point.is_yours ? '#e3aa00' : '#802bb1',opacity:point.is_yours ? 1 : .5});
       const title = document.createElementNS(ns,'title');
-      title.textContent = `${host.dataset.xLabel}: ${point.x}; ${host.dataset.yLabel}: ${point.y}${point.is_yours ? ' (your entry)' : ''}`;
+      title.textContent = `${host.dataset.xLabel}: ${point.x}; ${host.dataset.yLabel}: ${point.y}${point.is_yours ? ` (${host.dataset.ownLabel})` : ''}`;
       circle.appendChild(title);
     });
   });
