@@ -19,7 +19,7 @@ from .flexible import (
     schema_for_question,
 )
 from .models import Response
-from .localization import semantic, ui_copy
+from .localization import semantic, ui_copy, wording_signature
 
 COLORS = [
     "#0072b2",
@@ -357,13 +357,23 @@ def _plot_entries(question, participant=None, *, synthetic=False):
                 for attr in (
                     "version",
                     "type",
-                    "label",
-                    "choices",
                     "allow_other",
                     "min_value",
                 )
             ):
-                compatible[key] = value
+                current_words, previous_words = (
+                    wording_signature(current),
+                    wording_signature(previous),
+                )
+                equivalent = (
+                    question.options_json.get("language_aliases", {})
+                    .get(key, {})
+                    .get(str(current.get("version", 1)), [])
+                )
+                if current_words == previous_words or (
+                    current_words in equivalent and previous_words in equivalent
+                ):
+                    compatible[key] = value
         if any(value not in (None, "", []) for value in compatible.values()):
             entries.append(
                 (

@@ -7,7 +7,7 @@
   const config = JSON.parse(document.getElementById('language-editor-config').textContent);
   const uid = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => byte.toString(16).padStart(2, '0')).join('');
   const clone = value => JSON.parse(JSON.stringify(value));
-  const source = config.source;
+  let source = config.source;
   const translations = clone(config.translations || {});
   const title = form.querySelector('[name="activity-title"]');
   const description = form.querySelector('[name="activity-description"]');
@@ -38,7 +38,8 @@
       const previous = new Map(spec.choices.map(choice => [choice.label, choice]));
       spec.choices = ['choice', 'multiple', 'likert'].includes(spec.type) ? raw.split('\n').map(item => item.trim()).filter(Boolean).map(label => ({...(previous.get(label) || {}), label, value: previous.get(label)?.value || uid()})) : [];
     } else if (['choice', 'multiple', 'likert'].includes(spec.type)) {
-      const labels = Array.from(row.querySelectorAll('[data-choice-translation]'), input => input.value.trim());
+      const labels = raw === '' ? [] : raw.split('\n').map(item => item.trim());
+      while (labels.length > spec.choices.length && !labels[labels.length - 1]) labels.pop();
       if (labels.length > spec.choices.length) throw new Error(`Use at most ${spec.choices.length} translated option labels, in their original order.`);
       spec.choices.forEach((choice, index) => { target(choice).label = labels[index] || ''; });
     }
@@ -98,7 +99,7 @@
     if (Array.from(addSelect.options).some(option => option.value === selected)) addSelect.value = selected;
     openLanguage.disabled = addSelect.options.length === 0;
     const removeLanguage = form.querySelector('[data-delete-language]');
-    removeLanguage.hidden = language === source;
+    removeLanguage.hidden = variants().length < 2;
     removeLanguage.setAttribute('aria-label', `Delete ${names[language]}`);
     removeLanguage.title = `Delete ${names[language]}`;
     updateStatus();
@@ -119,6 +120,23 @@
       input.value = displayed(row._spec, key);
       input.placeholder = language === source ? '' : row._spec[key] || '';
     });
+  };
+  const syncOptionReference = row => {
+    const input = property(row, 'field', 'options');
+    const reference = row.querySelector('[data-option-reference]');
+    const translating = language !== source;
+    input.placeholder = translating ? '' : 'One option per line';
+    if (translating) input.setAttribute('aria-description', 'Original options: ' + row._spec.choices.map(choice => choice.label).join('; '));
+    else input.removeAttribute('aria-description');
+    reference.hidden = !translating;
+    input.classList.toggle('translation-options', translating);
+    input.rows = translating ? Math.max(4, row._spec.choices.length) : 4;
+    reference.replaceChildren(...row._spec.choices.map((choice, index) => {
+      const line = document.createElement('span');
+      line.textContent = input.value.split('\n')[index]?.trim() ? '' : choice.label;
+      return line;
+    }));
+    reference.scrollTop = input.scrollTop; reference.scrollLeft = input.scrollLeft;
   };
   const syncVisibility = row => {
     const type = property(row, 'field', 'type').value;
@@ -162,23 +180,11 @@
       renderText(section, 'section');
       questions(section).forEach(row => {
         renderText(row, 'field');
-        property(row, 'field', 'options').value = row._spec.choices.map(choice => displayed(choice, 'label')).join('\n');
+        const labels = row._spec.choices.map(choice => displayed(choice, 'label'));
+        property(row, 'field', 'options').value = labels.some(Boolean) ? labels.join('\n') : '';
         property(row, 'field', 'options').placeholder = language === source ? 'One option per line' : row._spec.choices.map(choice => choice.label).join('\n');
-        const optionInput = property(row, 'field', 'options');
-        const choiceList = row.querySelector('[data-choice-translations]');
-        optionInput.hidden = language !== source;
-        row.querySelector('[data-source-choice-hint]').hidden = language !== source;
-        choiceList.hidden = language === source;
-        choiceList.replaceChildren(...row._spec.choices.map((choice, index) => {
-          const label = document.createElement('label');
-          const reference = document.createElement('span');
-          reference.textContent = choice.label;
-          const input = document.createElement('input');
-          input.dataset.choiceTranslation = choice.value; input.maxLength = 200;
-          input.value = displayed(choice, 'label');
-          input.placeholder = names[language];
-          label.append(reference, input); return label;
-        }));
+        syncOptionReference(row);
+
       });
     });
     document.querySelectorAll('[data-language-preview]').forEach(link => {
@@ -252,8 +258,28 @@
   });
   form.querySelector('[data-cancel-language]').addEventListener('click', closePicker);
   form.querySelector('[data-delete-language]').addEventListener('click', () => {
-    if (language === source) return;
+    if (variants().length < 2) return;
+    try { flush(); } catch (error) { alert(error.message); return; }
     const removed = language;
+    if (removed === source) {
+      const replacement = variants().find(code => code !== removed && missing(code) === 0) || variants().find(code => code !== removed);
+      Object.assign(original, {title: translations[replacement]?.title || '', description: translations[replacement]?.description || ''});
+      sections().forEach(section => {
+        const promote = (spec, keys) => keys.forEach(key => { spec[key] = spec.translations?.[replacement]?.[key] || ''; });
+        const unusedAddLabel = section._spec.add_label;
+        promote(section._spec, textKeys.section);
+        if (!section._spec.repeatable && !section._spec.add_label) section._spec.add_label = unusedAddLabel;
+        questions(section).forEach(row => {
+          promote(row._spec, textKeys.field);
+          row._spec.choices.forEach(choice => promote(choice, ['label']));
+        });
+      });
+      source = replacement;
+      form.querySelector('[name="activity-source_language"]').value = source;
+      let deletion = form.querySelector('[name="delete_default_language"]');
+      if (!deletion) { deletion = document.createElement('input'); deletion.type = 'hidden'; deletion.name = 'delete_default_language'; form.appendChild(deletion); }
+      deletion.value = config.persisted_source || config.source;
+    }
     delete translations[removed];
     sections().forEach(section => {
       if (section._spec.translations) delete section._spec.translations[removed];
@@ -302,9 +328,15 @@
     else if (action.endsWith('down') && node.nextElementSibling) { node.parentNode.insertBefore(node.nextElementSibling, node); button.focus(); }
     dirty = true; update();
   });
+  host.addEventListener('scroll', event => {
+    const row = event.target.closest('[data-question]');
+    if (row && event.target.dataset.fieldProperty === 'options') syncOptionReference(row);
+  }, true);
   let statusTimer;
   form.addEventListener('input', event => {
     if (event.target.matches('[data-new-language]')) return;
+    const row = event.target.closest('[data-question]');
+    if (row && event.target.dataset.fieldProperty === 'options') syncOptionReference(row);
     dirty = true;
     form.querySelectorAll('[data-copy]').forEach(button => { button.disabled = true; });
     clearTimeout(statusTimer);

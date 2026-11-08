@@ -1997,9 +1997,6 @@ a.button:not(.button-secondary):not(:disabled):focus-visible { color: #fdfbf4; b
 .share-link-row { display: flex; gap: .75rem; align-items: center; }
 .share-link-row input { min-width: 0; flex: 1; }
 .share-link-row button { width: auto; flex: none; }
-.choice-translations { display: grid; gap: .7rem; }
-.choice-translations label { display: grid; gap: .3rem; }
-.choice-translations label > span { color: var(--muted); font-size: .85rem; }
 [data-schema-editor] [hidden] { display: none !important; }
 @media (max-width: 480px) { .share-link-row { flex-wrap: wrap; } .share-link-row input { flex-basis: 100%; } .entry-actions { gap: .5rem; } }
 @media (prefers-reduced-motion: reduce) { .language-tabs [role="tab"] { transition: none; } }
@@ -2007,5 +2004,10 @@ a.button:not(.button-secondary):not(:disabled):focus-visible { color: #fdfbf4; b
 .student-save-footer { display: flex; justify-content: flex-end; padding-top: .5rem; }
 .language-add-panel select, .language-add-panel .button { box-sizing: border-box; height: 42px; min-height: 42px; margin: 0; padding: 0 14px; line-height: normal; }
 .language-add-panel .button { display: inline-flex; align-items: center; justify-content: center; width: auto; }
-.button.button-cancel { color: #b42332; background: #fbe8eb; border: 1px solid #eec5cb; }
-.button.button-cancel:hover, .button.button-cancel:focus-visible { color: #941b28; background: #f7d6dc; border-color: #b42332; }
+
+input::placeholder, textarea::placeholder { color: #786c7b; opacity: 1; }
+.translation-option-wrap { position: relative; }
+.translation-option-wrap textarea { display: block; margin: 0; font: inherit; line-height: 24px; white-space: pre; }
+.translation-lines { position: absolute; inset: 1px; overflow: hidden; padding: 12px 14px; pointer-events: none; color: #786c7b; font: inherit; line-height: 24px; }
+.translation-lines span { display: block; height: 24px; white-space: pre; }
+.language-picker-close { height: 42px; width: 42px; flex: none; }

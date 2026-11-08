@@ -609,3 +609,86 @@ class LanguageVersionsTests(TestCase):
         self.assertNotIn(
             "de", schema_for_question(updated)["sections"][0]["translations"]
         )
+
+    def test_deleting_default_promotes_german_without_splitting_historical_cohort(self):
+        from .localization import translated_schema
+
+        activity, old = self.ready()
+        english = self.visitor(activity)
+        french = self.visitor(activity, "fr")
+        student_url = reverse("activity-student", args=[activity.slug])
+        english.post(student_url, self.answers(activity))
+        french.post(student_url, self.answers(activity, "fr"))
+        schema = schema_for_question(old)
+        schema["sections"][0]["title"] = "Updated section heading"
+        current = self.save(activity, schema)
+        self.assertNotEqual(current.pk, old.pk)
+        english.post(student_url, self.answers(activity))
+        historical = Response.objects.get(
+            question=current, payload__section_id="records"
+        )
+        historical.display_json = {}
+        historical.save(update_fields=["display_json"])
+        before = list(Response.objects.values_list("pk", "language", "payload"))
+        before_plots = english.get(
+            reverse("activity-results", args=[activity.slug])
+        ).context["plot_cards"]
+        promoted = translated_schema(schema_for_question(current), "de")
+        data = self.editor_data(activity, promoted)
+        data.update(
+            {
+                "activity-source_language": "de",
+                "activity-title": activity.translations["de"]["title"],
+                "activity-description": activity.translations["de"]["description"],
+                "delete_default_language": "en",
+                "editor_language": "de",
+            }
+        )
+        result = self.client.post(
+            reverse("research-edit-activity", args=[activity.slug]), data
+        )
+        self.assertEqual(result.status_code, 302)
+        activity.refresh_from_db()
+        updated = activity_question(activity)
+        self.assertEqual(activity.source_language, "de")
+        self.assertNotIn("en", activity.translations)
+        self.assertEqual(updated.pk, current.pk)
+        self.assertEqual(updated.version, current.version)
+        self.assertEqual(
+            list(Response.objects.values_list("pk", "language", "payload")), before
+        )
+        historical.refresh_from_db()
+        self.assertEqual(historical.display_json["activity_title"], "Course title")
+        self.assertEqual(response_answers(historical)[0]["label"], "Category")
+        self.assertEqual(english.get(student_url, {"lang": "en"}).status_code, 404)
+        page = english.get(student_url)
+        self.assertContains(page, "Deutsch Category")
+        self.assertContains(page, 'lang="de"')
+        after_plots = english.get(
+            reverse("activity-results", args=[activity.slug])
+        ).context["plot_cards"]
+
+        def numeric_count(cards):
+            return next(
+                card["data"]["count"]
+                for card in cards
+                if card["kind"] == "numeric" and card["data"]["field_id"] == "cost"
+            )
+
+        self.assertEqual(numeric_count(before_plots), 2)
+        self.assertEqual(numeric_count(after_plots), 2)
+        german = self.visitor(activity)
+        self.assertEqual(
+            german.post(student_url, self.answers(activity, "de")).status_code, 302
+        )
+        self.assertEqual(
+            numeric_count(
+                german.get(reverse("activity-results", args=[activity.slug])).context[
+                    "plot_cards"
+                ]
+            ),
+            3,
+        )
+        self.assertEqual(
+            set(Response.objects.values_list("language", flat=True)), {"en", "fr", "de"}
+        )

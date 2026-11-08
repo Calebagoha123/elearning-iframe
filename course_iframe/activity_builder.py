@@ -124,7 +124,9 @@ class ActivitySettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.original_title = self.instance.title
         self.original_source_language = self.instance.source_language
+        self.promoting_language = False
         self.initial["revision"] = self.instance.revision
         self.initial["activity_translations"] = self.instance.translations
 
@@ -138,10 +140,16 @@ class ActivitySettingsForm(forms.ModelForm):
             if self.add_prefix("activity_translations") in self.data
             else self.instance.translations
         )
-        if data.get(
-            "source_language", self.original_source_language
-        ) != self.original_source_language and any(
-            code != self.original_source_language for code in variants
+        self.promoting_language = (
+            self.data.get("delete_default_language") == self.original_source_language
+            and data.get("source_language") != self.original_source_language
+            and data.get("source_language") in variants
+        )
+        if (
+            not self.promoting_language
+            and data.get("source_language", self.original_source_language)
+            != self.original_source_language
+            and any(code != self.original_source_language for code in variants)
         ):
             self.add_error(
                 "source_language",
@@ -158,7 +166,13 @@ class ActivitySettingsForm(forms.ModelForm):
         activity = super().save(commit=False)
         if self.add_prefix("activity_translations") in self.data:
             activity.translations = self.cleaned_data["activity_translations"]
-        if activity.source_language != self.original_source_language:
+        if self.promoting_language:
+            activity.translations.pop(self.original_source_language, None)
+            selected = activity.translations.get(activity.source_language, {})
+            activity.translations[activity.source_language] = {
+                "ui": selected.get("ui", {})
+            }
+        elif activity.source_language != self.original_source_language:
             original_ui = activity.translations.pop(
                 self.original_source_language, {}
             ).get("ui", {})

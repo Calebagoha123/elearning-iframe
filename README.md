@@ -90,7 +90,9 @@ unless another original language is chosen during creation. The editor has a tab
 for each language (English, Dutch, German, French, Spanish, Portuguese, or Italian).
 Click **+**, choose a language, then **Add language** to create
 an empty text version of the existing question structure. Enter the title,
-instructions, question text, hints, and individual choice/scale labels in that tab.
+instructions, question text, hints, and choice/scale labels in that tab. Original
+text appears in grey as a placeholder. Options use one multiline field; each
+untranslated line keeps its original wording until you type its translation.
 Question types, answer codes, order, and required settings remain shared.
 Each tab shows its own Moodle link and embed code. Complete the text and save
 before copying them. Incomplete translations can be saved as drafts and tried in
@@ -102,10 +104,12 @@ export. Interface labels, icon tooltips, and validation messages use bundled tra
 Student actions use compact icons; the results tabs switch between charts for
 only the current student (**You**) and all responses (**Everyone**). The pencil
 next to **You** returns to their entry form. Each entry has a delete icon; one
-save action at the end submits all answers and opens the results. Added languages
+save action at the end submits all answers and opens the results. Languages
 can be removed with the trash icon beside the language tabs, then **Save activity**.
-The original language remains. Removing a language keeps historical responses and
-their wording snapshots; its public language link closes.
+Any language can be removed while another remains. Removing the default promotes
+a remaining language; existing question IDs, answer codes and versions stay the
+same. Historical responses and wording snapshots remain in the shared cohort
+across all languages; the deleted language’s explicit public link closes.
 
 Public activity links and staff student preview use the same forms and charts.
 Preview adds a staff navigation banner and never saves trial answers.

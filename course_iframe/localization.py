@@ -463,3 +463,45 @@ def language_url(url, language, source_language):
     return urlunsplit(
         (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
     )
+
+
+def promotion_baseline(original, incoming, language):
+    """Translate the old definition before comparing edits after a language promotion."""
+    baseline = deepcopy(original)
+    incoming_sections = {s["id"]: s for s in incoming["sections"]}
+    for section in baseline["sections"]:
+        updated = incoming_sections.get(section["id"], {})
+        section["translations"] = updated.get(
+            "translations", section.get("translations", {})
+        )
+        fields = {f["id"]: f for f in updated.get("fields", [])}
+        for field in section["fields"]:
+            edited = fields.get(field["id"], {})
+            field["translations"] = edited.get(
+                "translations", field.get("translations", {})
+            )
+            choices = {c["value"]: c for c in edited.get("choices", [])}
+            for choice in field.get("choices", []):
+                choice["translations"] = choices.get(choice["value"], {}).get(
+                    "translations", choice.get("translations", {})
+                )
+    return translated_schema(baseline, language)
+
+
+def wording_signature(field):
+    return semantic({"label": field.get("label"), "choices": field.get("choices")})
+
+
+def promotion_aliases(existing, original, promoted):
+    """Remember equivalent wordings so historical versions stay in the shared cohort."""
+    aliases = deepcopy(existing)
+    for schema in (original, promoted):
+        for section in schema["sections"]:
+            for field in section["fields"]:
+                texts = aliases.setdefault(field["id"], {}).setdefault(
+                    str(field.get("version", 1)), []
+                )
+                signature = wording_signature(field)
+                if signature not in texts:
+                    texts.append(signature)
+    return aliases

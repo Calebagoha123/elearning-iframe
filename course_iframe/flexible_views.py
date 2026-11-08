@@ -21,6 +21,8 @@ from .localization import (
     semantic,
     translated_activity,
     ui_copy,
+    promotion_baseline,
+    promotion_aliases,
 )
 
 from .activity_builder import ActivitySettingsForm, activity_links, activity_question
@@ -35,6 +37,7 @@ from .flexible import (
     section_formsets,
     version_questions,
     encoded_answers,
+    decoded_entry,
 )
 from .flexible_plots import (
     PlotSettingsForm,
@@ -42,7 +45,7 @@ from .flexible_plots import (
     plot_context,
     field_catalog,
 )
-from .models import Activity, Question, Participant
+from .models import Activity, Question, Participant, Response
 
 
 def editor(request, activity):
@@ -74,11 +77,35 @@ def editor(request, activity):
                 # Plot preferences do not increment the activity revision. Refresh
                 # after taking its lock so a schema edit retains newer chart settings.
                 question.refresh_from_db(fields=["options_json"])
-                schema = version_questions(
-                    initial_schema, schema_form.cleaned_data["schema"]
-                )
+                baseline = initial_schema
+                incoming = schema_form.cleaned_data["schema"]
+                if details.promoting_language:
+                    # Legacy responses may predate display snapshots. Preserve their
+                    # displayed wording before changing the canonical language.
+                    sections = {s["id"]: s for s in initial_schema["sections"]}
+                    for response in Response.objects.filter(
+                        question=question, display_json={}
+                    ):
+                        section_id, _ = decoded_entry(response)
+                        if section_id in sections:
+                            response.display_json = {
+                                "section": semantic(sections[section_id]),
+                                "activity_title": details.original_title,
+                            }
+                            response.save(update_fields=["display_json"])
+                    baseline = promotion_baseline(
+                        initial_schema,
+                        incoming,
+                        details.cleaned_data["source_language"],
+                    )
+                    question.options_json["language_aliases"] = promotion_aliases(
+                        question.options_json.get("language_aliases", {}),
+                        initial_schema,
+                        baseline,
+                    )
+                schema = version_questions(baseline, incoming)
                 # First edit of an original activity adapts its existing question schema.
-                if semantic(schema) != semantic(initial_schema):
+                if semantic(schema) != semantic(baseline):
                     question.is_active = False
                     question.save(update_fields=["is_active"])
                     options = {**question.options_json, SCHEMA_KEY: schema}
@@ -143,6 +170,7 @@ def editor(request, activity):
             "activity_settings": details,
             "schema_form": schema_form,
             "builder_schema": initial_schema,
+            "delete_default_language": request.POST.get("delete_default_language", ""),
             "field_types": [
                 {"value": key, "label": label} for key, label in FIELD_TYPES
             ],
@@ -151,6 +179,7 @@ def editor(request, activity):
             "embed_code": embed_code,
             "language_editor": {
                 "source": activity.source_language,
+                "persisted_source": details.original_source_language,
                 "selected": (
                     request.POST.get("editor_language") or request.GET.get("lang")
                 )
