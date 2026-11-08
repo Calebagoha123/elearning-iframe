@@ -18,7 +18,7 @@ class ParticipantEntryForm(forms.Form):
     def clean_pseudoname(self):
         pseudoname = self.cleaned_data["pseudoname"].strip()
         if not pseudoname:
-            raise forms.ValidationError("Enter your Moodle pseudoname.")
+            raise forms.ValidationError(self.fields["pseudoname"].error_messages["required"])
         return pseudoname
 
 

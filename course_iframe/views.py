@@ -22,7 +22,6 @@ from django.views.decorators.http import require_http_methods, require_POST
 from .forms import (
     ExportFilterForm,
     HousingEntryForm,
-    ParticipantEntryForm,
     RelationshipFormSet,
     ResearchLoginForm,
 )
@@ -192,6 +191,16 @@ def activity_iframe_entry(request, activity_slug):
         requested_activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True, activity_type__in=["housing_survey", "relationship_survey", "builder"])
         activity_config = {"title": requested_activity.title, "redirect": "activity-student"}
 
+    from .entry_pages import entry_configuration, entry_form, render_entry
+
+    if requested_activity and entry_configuration(requested_activity)["skip"]:
+        participant = participant_from_session(request)
+        if participant is None:
+            from uuid import uuid4
+            participant = get_or_create_participant("anon-" + uuid4().hex)
+            remember_participant(request, participant)
+        return redirect("activity-student", activity_slug=activity_slug)
+
     data_source = request.POST if request.method == "POST" else request.GET
     initial = {
         "pseudoname": (
@@ -201,7 +210,7 @@ def activity_iframe_entry(request, activity_slug):
         ).strip(),
     }
     if request.method == "POST":
-        form = ParticipantEntryForm(request.POST)
+        form = entry_form(requested_activity, request.POST)
         if form.is_valid():
             participant = get_or_create_participant(form.cleaned_data["pseudoname"])
             remember_participant(request, participant)
@@ -211,16 +220,10 @@ def activity_iframe_entry(request, activity_slug):
                 return redirect("activity-student", activity_slug=activity_slug)
             return redirect(activity_config["redirect"])
     else:
-        form = ParticipantEntryForm(initial=initial)
+        form = entry_form(requested_activity, initial=initial)
 
-    return render(
-        request,
-        "course_iframe/participant_entry.html",
-        {
-            "activity_title": activity_config["title"],
-            "form": form,
-        },
-    )
+    return render_entry(request, requested_activity, form, title=activity_config["title"])
+
 
 
 @student_required

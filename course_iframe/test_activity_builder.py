@@ -1311,3 +1311,148 @@ class FlexibleActivityTests(TestCase):
                     )
                     form = SectionResponseForm(answers, section=schema["sections"][0])
                     self.assertTrue(form.is_valid(), form.errors)
+
+    def test_landing_page_language_and_copy_are_saved_per_activity(self):
+        activity = self.create()
+        question = self.publish(activity, example_schema())
+        data = self.editor_payload(activity)
+        data.update(
+            {
+                "activity-landing_language": "de",
+                "activity-entry_heading": "Willkommen",
+                "activity-entry_intro": "Bitte lesen Sie die Anleitung.",
+            }
+        )
+        self.assertEqual(
+            self.client.post(
+                reverse("research-edit-activity", args=[activity.slug]), data
+            ).status_code,
+            302,
+        )
+        page = Client().get(reverse("activity-iframe-entry", args=[activity.slug]))
+        self.assertContains(page, '<html lang="de">')
+        self.assertContains(page, "Willkommen")
+        self.assertContains(page, "Bitte lesen Sie die Anleitung.")
+        self.assertContains(page, "Aktivität starten")
+        self.assertContains(page, "Verwenden Sie das in Moodle angegebene Pseudonym.")
+        self.assertNotContains(page, "Start activity")
+        invalid = Client().post(
+            reverse("activity-iframe-entry", args=[activity.slug]), {"pseudoname": " "}
+        )
+        self.assertContains(invalid, "Bitte geben Sie Ihr Pseudonym ein.")
+        activity.refresh_from_db()
+        self.assertEqual(activity.entry_settings["language"], "de")
+        self.assertEqual(activity_question(activity).pk, question.pk)
+        other = Client().get(reverse("activity-iframe-entry", args=["housing"]))
+        self.assertContains(other, "Start activity")
+
+    def test_custom_landing_copy_can_be_changed_or_removed(self):
+        activity = self.create()
+        self.publish(activity, example_schema())
+        data = self.editor_payload(activity)
+        data.update(
+            {
+                "activity-landing_language": "nl",
+                "activity-entry_label": "Uw code",
+                "activity-entry_help": "",
+                "activity-entry_privacy": "",
+                "activity-entry_eyebrow": "",
+                "activity-entry_button": "Verder",
+                "activity-entry_heading": "<script>alert(1)</script>",
+            }
+        )
+        self.client.post(reverse("research-edit-activity", args=[activity.slug]), data)
+        page = Client().get(reverse("activity-iframe-entry", args=[activity.slug]))
+        self.assertContains(page, 'lang="nl"')
+        self.assertContains(page, "Uw code")
+        self.assertContains(page, "Verder")
+        self.assertNotContains(page, 'class="disclaimer"')
+        self.assertNotContains(page, 'class="eyebrow"')
+        self.assertNotContains(page, "<script>alert(1)</script>")
+        self.assertContains(page, "&lt;script&gt;alert(1)&lt;/script&gt;")
+
+    def test_skip_landing_generates_and_reuses_random_identity(self):
+        from .models import Participant
+
+        activity = self.create()
+        self.publish(activity, example_schema())
+        data = self.editor_payload(activity)
+        data["activity-skip_landing"] = "on"
+        self.client.post(reverse("research-edit-activity", args=[activity.slug]), data)
+        visitor = Client()
+        url = reverse("activity-iframe-entry", args=[activity.slug])
+        before = Participant.objects.count()
+        response = visitor.get(url)
+        self.assertRedirects(
+            response, reverse("activity-student", args=[activity.slug])
+        )
+        participant = Participant.objects.get()
+        self.assertRegex(participant.participant_id, r"^anon-[0-9a-f]{32}$")
+        visitor.get(url)
+        visitor.post(url, {"pseudoname": "forged-id"})
+        self.assertEqual(Participant.objects.count(), before + 1)
+        # Another anonymous activity in the same session uses the same identity.
+        other = self.create("Another anonymous activity")
+        self.publish(other, example_schema())
+        other.entry_settings = {"skip": True}
+        other.save(update_fields=["entry_settings"])
+        visitor.get(reverse("activity-iframe-entry", args=[other.slug]))
+        self.assertEqual(Participant.objects.count(), before + 1)
+        visitor.post(
+            reverse("activity-student", args=[activity.slug]), self.answers(activity)
+        )
+        self.assertTrue(activity.responses.filter(participant=participant).exists())
+        Client().get(url)
+        self.assertEqual(Participant.objects.count(), before + 2)
+
+    def test_skip_landing_preserves_an_existing_named_identity(self):
+        from .models import Participant
+
+        activity = self.create()
+        self.publish(activity, example_schema())
+        visitor = self.student(activity, "existing-student")
+        activity.entry_settings = {"skip": True}
+        activity.save(update_fields=["entry_settings"])
+        visitor.get(reverse("activity-iframe-entry", args=[activity.slug]))
+        visitor.post(
+            reverse("activity-student", args=[activity.slug]), self.answers(activity)
+        )
+        self.assertEqual(Participant.objects.count(), 1)
+        self.assertEqual(
+            activity.responses.first().participant.participant_id, "existing-student"
+        )
+
+    def test_landing_preview_never_creates_anonymous_ids_and_requires_researcher(self):
+        from .models import Participant
+
+        activity = self.create()
+        activity.entry_settings = {"skip": True, "language": "de"}
+        activity.save(update_fields=["entry_settings"])
+        url = reverse("research-preview-entry", args=[activity.slug])
+        self.assertEqual(Client().get(url).status_code, 302)
+        page = self.client.get(url)
+        self.assertContains(page, "Aktivität starten")
+        self.assertContains(page, "currently skipped")
+        self.assertEqual(
+            self.client.post(url, {"pseudoname": "preview"}).status_code, 405
+        )
+        self.assertFalse(Participant.objects.exists())
+        self.assertEqual(
+            Client()
+            .get(reverse("activity-iframe-entry", args=[activity.slug]))
+            .status_code,
+            404,
+        )
+        self.assertFalse(Participant.objects.exists())
+
+    def test_student_question_groups_have_no_generic_english_heading_or_rule(self):
+        activity = self.create()
+        schema = example_schema()
+        schema["sections"][0]["title"] = ""
+        self.publish(activity, schema)
+        visitor = self.student(activity)
+        page = visitor.get(reverse("activity-student", args=[activity.slug]))
+        self.assertNotContains(page, ">Questions</legend>")
+        self.assertNotContains(page, ">Questions</h2>")
+        self.assertNotContains(page, "data-entry-number")
+        self.assertContains(page, "Comments")

@@ -12,7 +12,7 @@
   {% if groups %}<p class="muted">Questions marked * need an answer.</p>{% endif %}
   {% for group in groups %}
   <section class="panel form-stack" data-response-section data-prefix="{{ group.formset.prefix }}" data-repeatable="{{ group.section.repeatable|yesno:'true,false' }}">
-    <div><h2>{{ group.section.title|default:"Questions" }}</h2>{% if group.section.instructions %}{{ group.section.instructions|linebreaks }}{% endif %}</div>
+    <div>{% if group.section.title %}<h2>{{ group.section.title }}</h2>{% endif %}{% if group.section.instructions %}{{ group.section.instructions|linebreaks }}{% endif %}</div>
     {{ group.formset.management_form }}{{ group.formset.non_form_errors }}
     <div data-entry-list class="form-stack">{% for entry in group.formset %}{% include "course_iframe/_flexible_entry.html" %}{% endfor %}</div>
     {% if group.section.repeatable %}

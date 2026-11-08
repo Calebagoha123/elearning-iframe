@@ -1,5 +1,4 @@
-<fieldset class="flexible-entry" data-entry-row>
-  <legend>{% if group.section.repeatable %}Entry <span data-entry-number>{{ forloop.counter|default:"1" }}</span>{% else %}Questions{% endif %}</legend>
+<fieldset class="flexible-entry" data-entry-row aria-label="{{ group.section.title|default:activity.title }}">
   {{ entry.response_id }}{{ entry.non_field_errors }}
   {% for row in entry.field_rows %}
   <div class="flexible-answer flexible-answer--{{ row.spec.type }}"{% if row.spec.type == 'place' %} data-place-field{% endif %}>

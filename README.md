@@ -80,6 +80,17 @@ the interaction without saving answers. The editor provides a generated iframe
 link and embed code for Moodle. Students can review, change, add, and remove
 their entries before saving.
 
+In **Edit activity → Activity landing page**, choose German, Dutch or English
+starting text and customise the heading, introduction, ID label/hint, privacy
+notice and start button. Optional text can be cleared. Save before opening the
+landing-page preview; previews never create participant IDs or responses.
+
+Enable **Skip landing page** to open the activity directly. New browser sessions
+receive a random participant ID; an existing session identity is reused across
+activities. Clearing cookies or changing browser/device creates a new identity.
+Activity and question definitions and collected responses are stored in the
+PostgreSQL database, independently of these session cookies.
+
 Every activity has its own student results page, researcher response review,
 cohort plots, and CSV filter. Choice and Likert questions produce distributions;
 numbers produce distributions and summary statistics; free text produces word
@@ -143,6 +154,17 @@ variables are ignored and can be removed. HTTPS iframe deployments still need
 the cookie settings documented below.
 
 ## Data, Backups, And Retention
+
+Activity definitions (including user-created questions, landing-page settings and
+chart settings), participant IDs and responses are database records. Stopping,
+restarting or rebuilding the web container does not delete them. Both Compose
+configurations mount the database into the named `postgres_data` volume, which
+also survives ordinary `docker compose down` and container recreation.
+
+Do not use `docker compose down -v`, remove `postgres_data`, or delete the VM's
+storage unless you intend to delete the database. A different Compose project
+name/directory can select a different, initially empty volume; keep the production
+checkout and project name consistent. Restore a database backup when moving hosts.
 
 Production uses Postgres in Docker. The `backups` container writes compressed
 database dumps to the local Docker volume `postgres_backups`.

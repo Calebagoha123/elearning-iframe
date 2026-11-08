@@ -40,6 +40,7 @@ class Activity(models.Model):
     title = models.CharField(max_length=160)
     activity_type = models.CharField(max_length=80)
     description = models.TextField(blank=True)
+    entry_settings = models.JSONField(default=dict, blank=True)
     revision = models.PositiveIntegerField(default=1)
     deleted_at = models.DateTimeField(null=True, blank=True, editable=False)
     is_active = models.BooleanField(default=True)

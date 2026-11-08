@@ -1,25 +1,17 @@
 {% extends "base.html" %}
-
-{% block title %}Start {{ activity_title }}{% endblock %}
-
+{% block title %}{{ entry.heading|default:activity_title }}{% endblock %}
 {% block content %}
+{% if entry_preview %}<p class="message">Landing-page preview · No participant IDs or answers are saved.{% if entry.skip %} This landing page is currently skipped for students.{% endif %}</p><a class="text-link preview-return" href="{% url 'research-edit-activity' activity.slug %}">← Back to activity</a>{% endif %}
 <section class="panel panel-compact entry-panel">
-  <p class="eyebrow">Activity</p>
-  <h1>{{ activity_title }}</h1>
-  <form method="post" class="form-stack participant-entry-form">
+  {% if entry.eyebrow %}<p class="eyebrow">{{ entry.eyebrow }}</p>{% endif %}
+  <h1>{{ entry.heading|default:activity_title }}</h1>
+  {% if entry.intro %}<div>{{ entry.intro|linebreaks }}</div>{% endif %}
+  <form method="post" class="form-stack participant-entry-form"{% if entry_preview %} onsubmit="return false;"{% endif %}>
     {% csrf_token %}
-    <label>
-      <span>{{ form.pseudoname.label }}</span>
-      {{ form.pseudoname }}
-      <small>{{ form.pseudoname.help_text }}</small>
-    </label>
+    <label><span>{{ form.pseudoname.label }}</span>{{ form.pseudoname }}{% if form.pseudoname.help_text %}<small>{{ form.pseudoname.help_text }}</small>{% endif %}</label>
     {% if form.pseudoname.errors %}<p class="error">{{ form.pseudoname.errors|striptags }}</p>{% endif %}
-    <p class="disclaimer">
-      Your responses will be collected and aggregated with data from other activities for research purposes.
-      Although stored under a pseudonym, combining responses across activities may make it possible to re-identify
-      individual participants from the pseudonymized data.
-    </p>
-    <button class="button" type="submit">Start activity</button>
+    {% if entry.privacy %}<div class="disclaimer">{{ entry.privacy|linebreaks }}</div>{% endif %}
+    <button class="button" type="{% if entry_preview %}button{% else %}submit{% endif %}">{{ entry.button }}</button>
   </form>
 </section>
 {% endblock %}

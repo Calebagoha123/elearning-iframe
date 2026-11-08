@@ -1857,7 +1857,7 @@ input[type="radio"]:checked {
 .builder-remove:hover { color: var(--danger); }
 .builder-empty { padding: 48px 24px; text-align: center; border-block: 1px dashed var(--line-strong); }
 .builder-save-bar { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding: 20px 0; border-top: 1px solid var(--line-strong); }
-.flexible-entry { border: 0; border-top: 1px solid var(--line); padding: 24px 0 0; min-width: 0; }
+.flexible-entry { border: 0; padding: 0; min-width: 0; }
 .flexible-entry > legend { color: var(--muted); font-size: .9rem; }
 .flexible-answer { display: grid; gap: 8px; margin-bottom: 24px; min-width: 0; position: relative; }
 .flexible-answer > label { font-weight: 600; }
