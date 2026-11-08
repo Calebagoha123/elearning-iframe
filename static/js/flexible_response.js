@@ -24,7 +24,7 @@
       });
       total.value = list.children.length;
       section.querySelectorAll('[data-add-entry]').forEach(add => { add.disabled = list.children.length >= 1000; });
-      section.querySelector('[data-empty-add]')?.toggleAttribute('hidden', list.children.length > 0);
+      section.querySelector('[data-empty-actions]')?.toggleAttribute('hidden', list.children.length > 0);
     };
     section.addEventListener('click', event => {
       const add = event.target.closest('[data-add-entry]');

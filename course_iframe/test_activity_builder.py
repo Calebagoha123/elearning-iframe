@@ -463,7 +463,9 @@ class FlexibleActivityTests(TestCase):
         results = student.get(reverse("activity-results", args=[activity.slug]))
         self.assertContains(results, "Option A")
         self.assertContains(results, "High")
-        self.assertContains(results, "One, Three")
+        self.assertContains(results, "One")
+        self.assertContains(results, "Three")
+        self.assertNotContains(results, "Your answers")
         self.assertContains(
             self.client.get(
                 reverse("research-activity-responses", args=[activity.slug])
@@ -669,9 +671,9 @@ class FlexibleActivityTests(TestCase):
         self.assertContains(history, "Comments")
         self.assertContains(history, "A free response")
         self.assertContains(history, "Earlier version")
-        self.assertContains(
+        self.assertNotContains(
             student.get(reverse("activity-results", args=[activity.slug])),
-            "A free response",
+            "Your answers",
         )
         self.assertContains(
             self.client.get(

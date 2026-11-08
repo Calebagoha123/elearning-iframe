@@ -85,20 +85,23 @@ sessions receive a random participant ID; an existing session identity is reused
 across activities. Clearing cookies or changing browser/device creates a new
 identity. Activity/question definitions and responses remain in PostgreSQL.
 Questions and instructions are displayed exactly as entered; there is no Google
-Translate or other automatic translation service. Choose the original language
-when creating an activity (or correct it before adding translations). In the
-editor, **Add language** creates an English, Dutch, German, or French version.
-Switch **Editing language** to enter its activity title, instructions, section
-text, question text, hints, choice/scale labels. Question types, answer codes, order, and required settings are shared.
-Incomplete translations can be saved as drafts and tried in staff preview; public
-links become available only when all original text has a translation. Save, then
-choose **Link language** to copy that version's Moodle URL or embed code. All
-language links can circulate at once and collect into the same response pool.
+Translate or other automatic translation service. New activities start in English
+unless another original language is chosen during creation. The editor has a tab
+for each language. Click **+**, choose a language, then **Add language** to create
+an empty text version of the existing question structure. Enter the title,
+instructions, question text, hints, and individual choice/scale labels in that tab.
+Question types, answer codes, order, and required settings remain shared.
+Each tab shows its own Moodle link and embed code. Complete the text and save
+before copying them. Incomplete translations can be saved as drafts and tried in
+staff preview; public links become available only when complete. Language links
+can circulate at once and collect into the same response pool.
 Translation-only edits keep question versions and existing answers. Saved
 responses record the language and displayed wording for historical review and CSV
 export. Interface labels, icon tooltips, and validation messages use bundled translations.
 Student actions use compact icons; the results tabs switch between charts for
-only the current student (**You**) and all responses (**Everyone**).
+only the current student (**You**) and all responses (**Everyone**). The pencil
+next to **You** returns to their entry form; save and delete actions sit together
+below each entry. Save submits the activity form.
 
 Public activity links and staff student preview use the same forms and charts.
 Preview adds a staff navigation banner and never saves trial answers.

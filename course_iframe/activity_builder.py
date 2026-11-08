@@ -145,7 +145,7 @@ class ActivitySettingsForm(forms.ModelForm):
         ):
             self.add_error(
                 "source_language",
-                "Other language versions already exist. Use the editing-language selector to change their text; the original language cannot be reassigned.",
+                "Other language versions already exist. Use the language tabs to change their text; the original language cannot be reassigned.",
             )
         return data
 

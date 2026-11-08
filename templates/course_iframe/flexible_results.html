@@ -4,11 +4,12 @@
 {% block content %}
 <header class="topbar"><h1>{{ activity.title }}</h1></header>
 {% if preview %}<a class="text-link preview-return" href="{{ activity_edit_url }}">← Back to activity</a><p class="message">Student preview · Test answers are not saved.{% if translation_incomplete %} This translation is incomplete; missing text uses the original language.{% endif %} Charts use the same settings as the student page.</p>{% endif %}
-<nav class="form-actions"><a class="activity-icon" href="{{ activity_form_url }}" aria-label="{{ ui.edit }}" title="{{ ui.edit }}">{% include "course_iframe/_icon.html" with icon="pencil" %}</a></nav>
-{% if own_entries %}<details class="panel"><summary>{{ ui.your_answers }}</summary>{% for entry in own_entries %}<article class="response-review-row"><dl class="response-values">{% for answer in entry.answers %}<div><dt>{{ answer.label }}</dt><dd>{{ answer.value|default_if_none:"—" }}</dd></div>{% endfor %}</dl></article>{% endfor %}</details>{% endif %}
 <div data-student-results>
   <div class="student-result-tabs" role="tablist" aria-label="{{ ui.results }}">
-    <button type="button" role="tab" id="personal-tab" aria-controls="personal-charts" aria-selected="true" data-result-tab="personal">{% include "course_iframe/_icon.html" with icon="person" %}<span>{{ ui.personal_tab }}</span></button>
+    <div class="student-personal-tab" role="presentation">
+      <button type="button" role="tab" id="personal-tab" aria-controls="personal-charts" aria-selected="true" data-result-tab="personal">{% include "course_iframe/_icon.html" with icon="person" %}<span>{{ ui.personal_tab }}</span></button>
+      <a class="activity-icon student-tab-edit" href="{{ activity_form_url }}" aria-label="{{ ui.edit }}" title="{{ ui.edit }}">{% include "course_iframe/_icon.html" with icon="pencil" %}</a>
+    </div>
     <button type="button" role="tab" id="aggregate-tab" aria-controls="aggregate-charts" aria-selected="false" tabindex="-1" data-result-tab="aggregate">{% include "course_iframe/_icon.html" with icon="group" %}<span>{{ ui.aggregate_tab }}</span></button>
   </div>
   <div role="tabpanel" id="personal-charts" aria-labelledby="personal-tab" tabindex="0" data-result-panel="personal">{% include "course_iframe/_flexible_plots.html" with plot_cards=personal_plot_cards panel_prefix="personal-" defer_plot_scripts=True %}</div>

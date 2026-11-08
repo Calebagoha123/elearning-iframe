@@ -491,12 +491,18 @@ class LanguageVersionsTests(TestCase):
                         {"mineword"} if count == 1 else {"mineword", "otherword"},
                     )
         self.assertContains(result, 'role="tablist"')
+        self.assertNotContains(result, "Your answers")
+        self.assertContains(result, "activity-icon student-tab-edit")
         self.assertNotContains(result, "Purple points show")
         self.assertNotContains(result, ">Edit answers</a>")
         editor = self.client.get(
             reverse("research-edit-activity", args=[activity.slug])
         )
         self.assertNotContains(editor, "Student button labels")
+        self.assertContains(editor, "data-language-tabs")
+        self.assertContains(editor, "data-open-language")
+        self.assertNotContains(editor, "data-editor-language")
+        self.assertNotContains(editor, "data-share-language")
         self.assertNotContains(editor, ">Remove section</button>")
         before = Response.objects.count()
         preview = self.client.post(

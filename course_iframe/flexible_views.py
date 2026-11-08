@@ -30,7 +30,6 @@ from .flexible import (
     FIELD_TYPES,
     SchemaEditorForm,
     current_question,
-    response_answers,
     save_entries,
     schema_for_question,
     section_formsets,
@@ -43,7 +42,7 @@ from .flexible_plots import (
     plot_context,
     field_catalog,
 )
-from .models import Activity, Question, Response, Participant
+from .models import Activity, Question, Participant
 
 
 def editor(request, activity):
@@ -238,28 +237,12 @@ def _student(request, participant, activity, question, language, preview):
             valid = group["formset"].is_valid() and valid
         if valid:
             if preview:
-                examples, entries = [], []
-                display_title = translated_activity(activity, language).title
+                entries = []
                 for group in groups:
                     for form in group["formset"]:
                         if not form.cleaned_data:
                             continue
                         answers = encoded_answers(form)
-                        response = Response(
-                            question=question,
-                            activity=activity,
-                            question_version=question.version,
-                            language=language,
-                            payload={
-                                "section_id": group["section"]["id"],
-                                "answers": answers,
-                            },
-                            display_json={
-                                "section": semantic(group["section"]),
-                                "activity_title": display_title,
-                            },
-                        )
-                        examples.append(response)
                         entries.append((group["section"]["id"], answers, True))
                 return _render_results(
                     request,
@@ -268,7 +251,6 @@ def _student(request, participant, activity, question, language, preview):
                     question,
                     language,
                     preview=True,
-                    responses=examples,
                     preview_entries=entries,
                 )
             try:
@@ -310,17 +292,8 @@ def _render_results(
     question,
     language,
     preview=False,
-    responses=None,
     preview_entries=None,
 ):
-    if responses is None:
-        responses = (
-            Response.objects.filter(activity=activity, participant=participant)
-            .select_related("question")
-            .order_by("-created_at")
-            if participant
-            else []
-        )
     aggregate = plot_context(
         question,
         participant,
@@ -346,13 +319,6 @@ def _render_results(
             "question": question,
             "show_personal": False,
             "personal_plot_cards": personal["plot_cards"],
-            "own_entries": [
-                {
-                    "response": response,
-                    "answers": response_answers(response, language=language),
-                }
-                for response in responses
-            ],
             **aggregate,
         },
     )

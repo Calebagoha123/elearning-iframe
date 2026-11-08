@@ -7,13 +7,19 @@
 
 <form method="post" class="form-stack" data-schema-editor>
   {% csrf_token %}
-  <section class="language-editor" aria-label="Language versions">
-    <label>Editing language<select data-editor-language></select></label>
-    <label>Add language<select data-new-language></select></label>
-    <button class="button button-secondary button-small" type="button" data-add-language>Add language</button>
-    <p class="muted" data-language-status></p>
-    <p class="muted" data-language-structure hidden>Question structure is shared. Switch to the original language to add, remove or reorder questions and answer options.</p>
+  <section class="activity-languages" aria-label="Language versions">
+    <div class="language-tab-row">
+      <div class="language-tabs" role="tablist" aria-label="Activity language" data-language-tabs></div>
+      <button class="activity-icon language-add" type="button" data-open-language aria-label="Add language" title="Add language" aria-expanded="false" aria-controls="add-language-panel">+</button>
+    </div>
+    <div id="add-language-panel" class="language-add-panel" data-language-picker hidden>
+      <label for="new-language">Language<select id="new-language" data-new-language></select></label>
+      <button class="button button-small" type="button" data-add-language>Add language</button>
+      <button class="text-link" type="button" data-cancel-language>Cancel</button>
+    </div>
+    <p class="muted language-status" data-language-status role="status"></p>
   </section>
+  <div role="tabpanel" id="activity-language-panel" data-language-panel>
   <section class="panel form-stack">{% include "research/_activity_settings.html" %}</section>
   {{ schema_form.schema }}
   {% if schema_form.errors %}<div class="message message-error" role="alert">{{ schema_form.errors }}</div>{% endif %}
@@ -24,6 +30,7 @@
     <div class="builder-empty" data-builder-empty><p>No questions yet.</p><button type="button" class="button" data-first-question>+ Add your first question</button></div>
   </section>
   <div class="builder-save-bar"><p class="muted">Saving a changed question automatically creates its next version. Earlier responses keep their original wording.</p><button class="button" type="submit" data-save-changes>Save activity</button></div>
+  </div>
   <noscript><p class="message message-error">Enable JavaScript to build and reorder questions.</p></noscript>
 </form>
 <template id="builder-section-template">
@@ -48,7 +55,7 @@
     <div class="builder-field"><label data-field-label="help_text">Hint (optional)</label><input data-field-property="help_text" maxlength="1000"></div>
     <label class="builder-check"><input type="checkbox" data-field-property="required"><span>Answer required</span></label>
     <div class="builder-field" data-likert-settings><label data-field-label="points">Scale points</label><input type="number" min="3" max="11" data-field-property="points"></div>
-    <div class="builder-field" data-choice-settings><label data-field-label="options">Answer options / scale labels</label><textarea data-field-property="options" rows="4" placeholder="One option per line"></textarea><small>One label per line, in the order students should see them.</small></div>
+    <div class="builder-field" data-choice-settings><label data-field-label="options">Answer options / scale labels</label><textarea data-field-property="options" rows="4" placeholder="One option per line"></textarea><small data-source-choice-hint>One label per line, in the order students should see them.</small><div class="choice-translations" data-choice-translations hidden></div></div>
     <label class="builder-check" data-other-setting><input type="checkbox" data-field-property="allow_other"><span>Include “Other” with a text answer</span></label>
     <div class="builder-field" data-numeric-settings><label data-field-label="min_value">Minimum value (optional)</label><input type="number" step="any" data-field-property="min_value"></div>
   </div>

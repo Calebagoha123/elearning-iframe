@@ -12,9 +12,10 @@
   const title = form.querySelector('[name="activity-title"]');
   const description = form.querySelector('[name="activity-description"]');
   const original = {title: title.value, description: description.value};
-  const languageSelect = form.querySelector('[data-editor-language]');
+  const languageTabs = form.querySelector('[data-language-tabs]');
+  const languagePicker = form.querySelector('[data-language-picker]');
+  const openLanguage = form.querySelector('[data-open-language]');
   const addSelect = form.querySelector('[data-new-language]');
-  const shareSelect = form.querySelector('[data-share-language]');
   let language = source, dirty = false;
   const sections = () => Array.from(host.children);
   const questions = section => Array.from(section.querySelector('[data-question-list]').children);
@@ -37,7 +38,7 @@
       const previous = new Map(spec.choices.map(choice => [choice.label, choice]));
       spec.choices = ['choice', 'multiple', 'likert'].includes(spec.type) ? raw.split('\n').map(item => item.trim()).filter(Boolean).map(label => ({...(previous.get(label) || {}), label, value: previous.get(label)?.value || uid()})) : [];
     } else if (['choice', 'multiple', 'likert'].includes(spec.type)) {
-      const labels = raw === '' ? [] : raw.split('\n').map(item => item.trim());
+      const labels = Array.from(row.querySelectorAll('[data-choice-translation]'), input => input.value.trim());
       if (labels.length > spec.choices.length) throw new Error(`Use at most ${spec.choices.length} translated option labels, in their original order.`);
       spec.choices.forEach((choice, index) => { target(choice).label = labels[index] || ''; });
     }
@@ -69,7 +70,7 @@
     return total;
   };
   const share = () => {
-    const code = shareSelect.value || source;
+    const code = language;
     const input = document.getElementById('embed-url');
     const url = new URL(input.dataset.baseUrl || input.value);
     input.dataset.baseUrl ||= input.value.split('?')[0];
@@ -82,22 +83,30 @@
     document.getElementById('embed-code').value = iframe.outerHTML;
   };
   const updateLanguages = () => {
-    languageSelect.replaceChildren(...variants().map(code => new Option(names[code] + (code === source ? ' · original' : ''), code)));
-    languageSelect.value = language;
+    languageTabs.replaceChildren(...variants().map(code => {
+      const tab = document.createElement('button');
+      tab.type = 'button'; tab.setAttribute('role', 'tab'); tab.id = `language-tab-${code}`;
+      tab.dataset.languageTab = code; tab.textContent = names[code];
+      tab.setAttribute('aria-controls', 'activity-language-panel');
+      tab.setAttribute('aria-selected', String(code === language));
+      tab.tabIndex = code === language ? 0 : -1;
+      return tab;
+    }));
+    form.querySelector('[data-language-panel]').setAttribute('aria-labelledby', `language-tab-${language}`);
+    const selected = addSelect.value;
     addSelect.replaceChildren(...config.languages.filter(item => !variants().includes(item.code)).map(item => new Option(item.name, item.code)));
-    form.querySelector('[data-add-language]').disabled = addSelect.options.length === 0;
+    if (Array.from(addSelect.options).some(option => option.value === selected)) addSelect.value = selected;
+    openLanguage.disabled = addSelect.options.length === 0;
     updateStatus();
   };
   const updateStatus = () => {
-    const previousShare = shareSelect.value;
-    shareSelect.replaceChildren(...variants().map(code => {
-      const count = missing(code);
-      const option = new Option(names[code] + (count ? ` · ${count} untranslated` : ''), code);
-      option.disabled = count > 0; return option;
-    }));
-    shareSelect.value = variants().includes(previousShare) && !missing(previousShare) ? previousShare : source;
     const count = missing(language);
-    form.querySelector('[data-language-status]').textContent = language === source ? 'Editing original text. Each added language has its own text and share link.' : (count ? `${count} text fields still need a translation. Draft translations can be saved; their public links become available when complete.` : 'Translation complete. Save before copying this language link.');
+    form.querySelector('[data-language-status]').textContent = language === source ? '' : `${names[language]} · ${count ? `${count} text fields left` : 'All text complete'}. Question structure is shared with ${names[source]}.`;
+    form.querySelector('[data-share-title]').textContent = `${names[language]} · Moodle link`;
+    form.querySelector('[data-share-status]').textContent = count ? 'Complete the empty fields and save to share this language.' : dirty ? 'Save changes to enable sharing.' : '';
+    form.querySelectorAll('[data-copy]').forEach(button => { button.disabled = count > 0 || dirty; });
+    const copyStatus = form.querySelector('[data-copy-status]');
+    if (copyStatus) copyStatus.textContent = '';
     share();
   };
   const renderText = (row, kind) => {
@@ -117,7 +126,6 @@
   const update = () => {
     const groups = sections(), translating = language !== source;
     form.querySelector('[data-builder-empty]').hidden = groups.length > 0;
-    form.querySelector('[data-language-structure]').hidden = !translating;
     groups.forEach((section, index) => {
       section.querySelector('[data-section-number]').textContent = index + 1;
       section.querySelector('[data-action="section-up"]').disabled = translating || index === 0;
@@ -138,6 +146,7 @@
     });
     form.querySelector('[data-add-section]').disabled = translating || groups.length >= 30;
     form.querySelector('[data-first-question]').disabled = translating;
+    updateStatus();
   };
   const showLanguage = () => {
     title.value = language === source ? original.title : translations[language]?.title || '';
@@ -151,6 +160,21 @@
         renderText(row, 'field');
         property(row, 'field', 'options').value = row._spec.choices.map(choice => displayed(choice, 'label')).join('\n');
         property(row, 'field', 'options').placeholder = language === source ? 'One option per line' : row._spec.choices.map(choice => choice.label).join('\n');
+        const optionInput = property(row, 'field', 'options');
+        const choiceList = row.querySelector('[data-choice-translations]');
+        optionInput.hidden = language !== source;
+        row.querySelector('[data-source-choice-hint]').hidden = language !== source;
+        choiceList.hidden = language === source;
+        choiceList.replaceChildren(...row._spec.choices.map((choice, index) => {
+          const label = document.createElement('label');
+          const reference = document.createElement('span');
+          reference.textContent = choice.label;
+          const input = document.createElement('input');
+          input.dataset.choiceTranslation = choice.value; input.maxLength = 200;
+          input.value = displayed(choice, 'label');
+          input.placeholder = names[language];
+          label.append(reference, input); return label;
+        }));
       });
     });
     document.querySelectorAll('[data-language-preview]').forEach(link => {
@@ -195,16 +219,52 @@
   schema.sections.forEach(addSection);
   language = variants().includes(config.selected) ? config.selected : source;
   showLanguage();
-  languageSelect.addEventListener('change', () => {
-    const selected = languageSelect.value;
-    try { flush(); language = selected; showLanguage(); } catch (error) { languageSelect.value = language; alert(error.message); }
+  const switchLanguage = selected => {
+    try { flush(); language = selected; showLanguage(); languageTabs.querySelector(`[data-language-tab="${selected}"]`).focus(); }
+    catch (error) { alert(error.message); }
+  };
+  languageTabs.addEventListener('click', event => {
+    const tab = event.target.closest('[data-language-tab]');
+    if (tab) switchLanguage(tab.dataset.languageTab);
   });
+  languageTabs.addEventListener('keydown', event => {
+    const tabs = Array.from(languageTabs.children), index = tabs.indexOf(event.target);
+    if (index < 0) return;
+    let next;
+    if (event.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
+    if (event.key === 'ArrowLeft') next = tabs[(index + tabs.length - 1) % tabs.length];
+    if (event.key === 'Home') next = tabs[0];
+    if (event.key === 'End') next = tabs[tabs.length - 1];
+    if (!next) return;
+    event.preventDefault(); switchLanguage(next.dataset.languageTab);
+  });
+  const closePicker = () => {
+    languagePicker.hidden = true; openLanguage.setAttribute('aria-expanded', 'false'); openLanguage.focus();
+  };
+  openLanguage.addEventListener('click', () => {
+    const opening = languagePicker.hidden;
+    languagePicker.hidden = !opening; openLanguage.setAttribute('aria-expanded', String(opening));
+    if (opening) addSelect.focus();
+  });
+  form.querySelector('[data-cancel-language]').addEventListener('click', closePicker);
+  languagePicker.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closePicker(); } });
   form.querySelector('[data-add-language]').addEventListener('click', () => {
     const selected = addSelect.value;
     if (!selected) return;
-    try { flush(); translations[selected] ||= {}; language = selected; dirty = true; showLanguage(); } catch (error) { alert(error.message); }
+    try {
+      flush(); translations[selected] = {};
+      sections().forEach(section => {
+        if (section._spec.translations) delete section._spec.translations[selected];
+        questions(section).forEach(row => {
+          if (row._spec.translations) delete row._spec.translations[selected];
+          row._spec.choices.forEach(choice => { if (choice.translations) delete choice.translations[selected]; });
+        });
+      });
+      language = selected; dirty = true;
+      languagePicker.hidden = true; openLanguage.setAttribute('aria-expanded', 'false');
+      showLanguage(); title.focus();
+    } catch (error) { alert(error.message); }
   });
-  shareSelect.addEventListener('change', share);
   form.querySelector('[data-add-section]').addEventListener('click', () => {
     const section = addSection(); addQuestion(section); dirty = true; update(); property(section, 'section', 'title').focus();
   });
@@ -225,8 +285,9 @@
   });
   let statusTimer;
   form.addEventListener('input', event => {
-    if (event.target.matches('[data-editor-language], [data-new-language], [data-share-language]')) return;
+    if (event.target.matches('[data-new-language]')) return;
     dirty = true;
+    form.querySelectorAll('[data-copy]').forEach(button => { button.disabled = true; });
     clearTimeout(statusTimer);
     statusTimer = setTimeout(() => { try { flush(); updateStatus(); } catch (_) { /* Validate option count on save/switch. */ } }, 150);
   });
