@@ -15,12 +15,12 @@
     {{ group.formset.management_form }}{{ group.formset.non_form_errors }}
     <div data-entry-list class="form-stack">{% for entry in group.formset %}{% include "course_iframe/_flexible_entry.html" %}{% endfor %}</div>
     {% if group.section.repeatable %}
-    <button class="button button-secondary" type="button" data-add-entry>{{ group.section.add_label }}</button>
+    <button class="button button-secondary" type="button" data-add-entry data-empty-add>+ {{ group.section.add_label }}</button>
     <template data-entry-template>{% include "course_iframe/_flexible_entry.html" with entry=group.formset.empty_form %}</template>
     {% endif %}
   </section>
   {% empty %}<p class="panel muted">{{ ui.empty_questions }}</p>{% endfor %}
-  {% if groups %}<div class="form-actions"><button class="button" type="submit">{{ ui.save }}</button><a class="text-link" href="{{ activity_results_url }}">{{ ui.results }}</a></div>{% endif %}
+  {% if groups %}<div class="form-actions"><button class="activity-icon student-primary-action" type="submit" aria-label="{{ ui.save }}" title="{{ ui.save }}">{% include "course_iframe/_icon.html" with icon="check" %}</button><a class="activity-icon" href="{{ activity_results_url }}" aria-label="{{ ui.results }}" title="{{ ui.results }}">{% include "course_iframe/_icon.html" with icon="chart" %}</a></div>{% endif %}
 </form>
 {{ ui|json_script:"student-ui-copy" }}
 <script src="{% static 'js/flexible_response.js' %}" defer></script>

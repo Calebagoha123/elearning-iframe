@@ -89,15 +89,16 @@ Translate or other automatic translation service. Choose the original language
 when creating an activity (or correct it before adding translations). In the
 editor, **Add language** creates an English, Dutch, German, or French version.
 Switch **Editing language** to enter its activity title, instructions, section
-text, question text, hints, choice/scale labels, and optional student button
-labels. Question types, answer codes, order, and required settings are shared.
+text, question text, hints, choice/scale labels. Question types, answer codes, order, and required settings are shared.
 Incomplete translations can be saved as drafts and tried in staff preview; public
 links become available only when all original text has a translation. Save, then
 choose **Link language** to copy that version's Moodle URL or embed code. All
 language links can circulate at once and collect into the same response pool.
 Translation-only edits keep question versions and existing answers. Saved
 responses record the language and displayed wording for historical review and CSV
-export. Interface labels and validation messages use bundled translations.
+export. Interface labels, icon tooltips, and validation messages use bundled translations.
+Student actions use compact icons; the results tabs switch between charts for
+only the current student (**You**) and all responses (**Everyone**).
 
 Public activity links and staff student preview use the same forms and charts.
 Preview adds a staff navigation banner and never saves trial answers.

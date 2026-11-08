@@ -19,22 +19,27 @@
             if (node.hasAttribute(attr)) node.setAttribute(attr, node.getAttribute(attr).replace(new RegExp(`${prefix}-(\\d+|__prefix__)-`, 'g'), `${prefix}-${index}-`));
           });
         });
+        row.querySelector('[data-entry-add]')?.toggleAttribute('hidden', index !== list.children.length - 1);
         syncOther(row);
       });
       total.value = list.children.length;
-      const add = section.querySelector('[data-add-entry]');
-      if (add) add.disabled = list.children.length >= 1000;
+      section.querySelectorAll('[data-add-entry]').forEach(add => { add.disabled = list.children.length >= 1000; });
+      section.querySelector('[data-empty-add]')?.toggleAttribute('hidden', list.children.length > 0);
     };
-    section.querySelector('[data-add-entry]')?.addEventListener('click', () => {
-      list.appendChild(section.querySelector('[data-entry-template]').content.cloneNode(true));
-      reindex(); list.lastElementChild.querySelector('input:not([type="hidden"]), select, textarea')?.focus();
-    });
     section.addEventListener('click', event => {
+      const add = event.target.closest('[data-add-entry]');
+      if (add && !add.disabled) {
+        list.appendChild(section.querySelector('[data-entry-template]').content.cloneNode(true));
+        reindex(); list.lastElementChild.querySelector('input:not([type="hidden"]), select, textarea')?.focus();
+        return;
+      }
       const button = event.target.closest('[data-remove-entry]');
       if (!button) return;
       const row = button.closest('[data-entry-row]');
+      const nextFocus = row.nextElementSibling || row.previousElementSibling;
       row.remove();
       reindex();
+      (nextFocus?.querySelector('[data-remove-entry]') || section.querySelector('[data-empty-add]'))?.focus();
     });
     reindex();
   });

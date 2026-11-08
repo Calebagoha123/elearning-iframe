@@ -1,6 +1,6 @@
 {% load static %}
 {% for card in plot_cards %}
-<section class="panel chart-panel" id="chart-{{ card.id }}">
+<section class="panel chart-panel" id="{{ panel_prefix }}chart-{{ card.id }}">
   <header class="chart-card__head">
     <h2>{{ card.title }}</h2>
     {% if is_research_view and not preview_only %}
@@ -31,5 +31,5 @@
   {% endif %}
 </section>
 {% empty %}<section class="panel"><p class="muted">{% if is_research_view %}No compatible charts yet. Add questions to build charts for this activity.{% else %}{{ ui.no_charts }}{% endif %}</p></section>{% endfor %}
-<script src="{% static 'js/flexible_plots.js' %}" defer></script>
+{% if not defer_plot_scripts %}<script src="{% static 'js/flexible_plots.js' %}" defer></script>{% endif %}
 {% if is_research_view %}<script src="{% static 'js/chart_visibility.js' %}" defer></script>{% endif %}

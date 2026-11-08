@@ -45,8 +45,6 @@
   const flush = () => {
     if (language === source) Object.assign(original, {title: title.value, description: description.value});
     else Object.assign(translations[language] ||= {}, {title: title.value, description: description.value});
-    const ui = (translations[language] ||= {}).ui ||= {};
-    form.querySelectorAll('[data-ui-label]').forEach(input => { ui[input.dataset.uiLabel] = input.value; });
     sections().forEach(section => {
       textKeys.section.forEach(key => { target(section._spec)[key] = property(section, 'section', key).value; });
       if (language === source) section._spec.repeatable = property(section, 'section', 'repeatable').checked;
@@ -147,10 +145,6 @@
     title.placeholder = language === source ? '' : original.title;
     description.placeholder = language === source ? '' : original.description;
     title.required = language === source;
-    form.querySelectorAll('[data-ui-label]').forEach(input => {
-      input.value = translations[language]?.ui?.[input.dataset.uiLabel] || '';
-      input.placeholder = config.ui[language][input.dataset.uiLabel];
-    });
     sections().forEach(section => {
       renderText(section, 'section');
       questions(section).forEach(row => {

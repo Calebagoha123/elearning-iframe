@@ -21,5 +21,8 @@
     {% endif %}
   </div>
   {% endfor %}
-  {% if group.section.repeatable %}<button type="button" class="text-link builder-remove" data-remove-entry>{{ ui.remove_entry }}</button>{% endif %}
+  {% if group.section.repeatable %}<div class="entry-actions">
+    <button class="button button-secondary" type="button" data-add-entry data-entry-add hidden>+ {{ group.section.add_label }}</button>
+    <button type="button" class="activity-icon activity-icon--delete" data-remove-entry aria-label="{{ ui.remove_entry }}" title="{{ ui.remove_entry }}">{% include "course_iframe/_icon.html" with icon="trash" %}</button>
+  </div>{% endif %}
 </fieldset>

@@ -15,6 +15,8 @@ LANGUAGES = [
 LANGUAGE_CODES = {code for code, _ in LANGUAGES}
 # Fixed interface copy; authors can override these labels for every language.
 _ROWS = {
+    "personal_tab": ("You", "U", "Sie", "Vous"),
+    "aggregate_tab": ("Everyone", "Iedereen", "Alle", "Tout le monde"),
     "save": ("Save", "Opslaan", "Speichern", "Enregistrer"),
     "results": ("Results", "Resultaten", "Ergebnisse", "Résultats"),
     "edit": (

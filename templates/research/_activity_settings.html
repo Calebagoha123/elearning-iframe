@@ -10,10 +10,7 @@
 {% endfor %}
 <p class="muted">Uncheck Published to keep a draft or close student access. Saved responses are retained.</p>
 </fieldset>
-<details class="activity-embed-details" data-student-labels>
-  <summary>Student button labels</summary>
-  <div class="form-stack">{% for item in ui_editable %}<label>{{ item.label }}<input data-ui-label="{{ item.key }}" maxlength="200" placeholder="Use the standard label"></label>{% endfor %}</div>
-</details>
+
 <details class="activity-embed-details">
   <summary>Moodle link and embed code</summary>
   <div class="form-stack">

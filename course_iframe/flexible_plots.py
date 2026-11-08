@@ -712,6 +712,7 @@ def plot_context(
     include_library=True,
     language=None,
     preview_entries=None,
+    scope=None,
 ):
     language = language or question.activity.source_language
     entries_data = _plot_entries(question, participant, synthetic=synthetic)
@@ -719,6 +720,14 @@ def plot_context(
         entries_data = (
             entries_data[0] + preview_entries,
             entries_data[1] | {"preview"},
+        )
+    if scope == "personal":
+        own_entries = [entry for entry in entries_data[0] if entry[2]]
+        entries_data = (own_entries, {"personal"} if own_entries else set())
+    elif scope == "aggregate":
+        entries_data = (
+            [(section, answers, False) for section, answers, _ in entries_data[0]],
+            entries_data[1],
         )
     context = _single_plot_context(
         question,

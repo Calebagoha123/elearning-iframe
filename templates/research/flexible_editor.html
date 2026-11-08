@@ -28,7 +28,7 @@
 </form>
 <template id="builder-section-template">
 <section class="panel builder-section" data-builder-section>
-  <header class="builder-section-heading"><h3>Section <span data-section-number></span></h3><div class="row-actions"><button type="button" class="icon-button" data-action="section-up" aria-label="Move section up">↑</button><button type="button" class="icon-button" data-action="section-down" aria-label="Move section down">↓</button><button type="button" class="builder-remove text-link" data-action="section-remove">Remove section</button></div></header>
+  <header class="builder-section-heading"><h3>Section <span data-section-number></span></h3><div class="row-actions"><button type="button" class="icon-button" data-action="section-up" aria-label="Move section up">↑</button><button type="button" class="icon-button" data-action="section-down" aria-label="Move section down">↓</button><button type="button" class="activity-icon activity-icon--delete" data-action="section-remove" aria-label="Delete section" title="Delete section">{% include "course_iframe/_icon.html" with icon="trash" %}</button></div></header>
   <div class="builder-section-settings">
     <div class="builder-field"><label data-section-label="title">Section title (optional)</label><input data-section-property="title" maxlength="160"></div>
     <div class="builder-field"><label data-section-label="instructions">Instructions (optional)</label><textarea data-section-property="instructions" rows="2" maxlength="4000"></textarea></div>

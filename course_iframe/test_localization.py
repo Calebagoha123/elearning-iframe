@@ -283,7 +283,7 @@ class LanguageVersionsTests(TestCase):
         visitor = self.visitor(activity)
         page = visitor.get(reverse("activity-student", args=[activity.slug]))
         self.assertContains(page, 'lang="de"')
-        self.assertContains(page, ">Speichern</button>")
+        self.assertContains(page, 'aria-label="Speichern"')
         self.assertEqual(
             visitor.get(
                 reverse("activity-student", args=[activity.slug]), {"lang": "en"}
@@ -366,7 +366,7 @@ class LanguageVersionsTests(TestCase):
         page = visitor.get(
             reverse("activity-student", args=[activity.slug]), {"lang": "de"}
         )
-        self.assertContains(page, ">Abschicken</button>")
+        self.assertContains(page, 'aria-label="Abschicken"')
         self.assertContains(page, "Zeile löschen")
         visitor.post(
             reverse("activity-student", args=[activity.slug]),
@@ -436,3 +436,90 @@ class LanguageVersionsTests(TestCase):
         self.assertIn("source_language", response.context["activity_settings"].errors)
         activity.refresh_from_db()
         self.assertEqual(activity.source_language, "en")
+
+    def test_results_tabs_filter_every_chart_type_and_preserve_preview_answers(self):
+        activity, question = self.ready()
+        first, second = self.visitor(activity), self.visitor(activity)
+        url = reverse("activity-student", args=[activity.slug])
+        mine = self.answers(activity)
+        mine["section-once-0-comments"] = "mineword"
+        self.assertEqual(first.post(url, mine).status_code, 302)
+        theirs = self.answers(activity)
+        theirs.update(
+            {
+                "section-once-0-comments": "otherword",
+                "section-records-0-category": "2",
+                "section-records-0-rating": "1",
+                "section-records-0-cost": "200",
+                "section-records-0-size": "4",
+            }
+        )
+        self.assertEqual(second.post(url, theirs).status_code, 302)
+        result = first.get(reverse("activity-results", args=[activity.slug]))
+        personal, aggregate = (
+            result.context["personal_plot_cards"],
+            result.context["plot_cards"],
+        )
+        self.assertEqual(
+            {card["kind"] for card in personal},
+            {"distribution", "numeric", "word_cloud", "scatter", "stacked"},
+        )
+        self.assertEqual(
+            [card["id"] for card in personal], [card["id"] for card in aggregate]
+        )
+        for cards, count, mean in [(personal, 1, 50), (aggregate, 2, 125)]:
+            for card in cards:
+                data = card["data"]
+                if card["kind"] == "scatter":
+                    self.assertEqual(len(data["points"]), count)
+                    self.assertTrue(
+                        all(
+                            point["is_yours"] == (count == 1)
+                            for point in data["points"]
+                        )
+                    )
+                elif card["kind"] == "stacked":
+                    self.assertEqual(sum(row["total"] for row in data["rows"]), count)
+                elif card["kind"] == "numeric" and data["field_id"] == "cost":
+                    self.assertEqual(data["count"], count)
+                    self.assertEqual(float(data["mean"]), mean)
+                elif card["kind"] == "distribution" and data["field_id"] == "category":
+                    self.assertEqual(data["total"], count)
+                elif card["kind"] == "word_cloud" and data["field_id"] == "comments":
+                    self.assertEqual(
+                        {word["label"] for word in data["words"]},
+                        {"mineword"} if count == 1 else {"mineword", "otherword"},
+                    )
+        self.assertContains(result, 'role="tablist"')
+        self.assertNotContains(result, "Purple points show")
+        self.assertNotContains(result, ">Edit answers</a>")
+        editor = self.client.get(
+            reverse("research-edit-activity", args=[activity.slug])
+        )
+        self.assertNotContains(editor, "Student button labels")
+        self.assertNotContains(editor, ">Remove section</button>")
+        before = Response.objects.count()
+        preview = self.client.post(
+            reverse("research-preview-activity", args=[activity.slug]), mine
+        )
+        self.assertEqual(Response.objects.count(), before)
+        own_scatter = next(
+            card
+            for card in preview.context["personal_plot_cards"]
+            if card["kind"] == "scatter"
+        )
+        all_scatter = next(
+            card for card in preview.context["plot_cards"] if card["kind"] == "scatter"
+        )
+        self.assertEqual(len(own_scatter["data"]["points"]), 1)
+        self.assertEqual(len(all_scatter["data"]["points"]), 3)
+        empty = self.visitor(activity).get(
+            reverse("activity-results", args=[activity.slug])
+        )
+        self.assertTrue(
+            all(
+                not card["data"].get("points")
+                for card in empty.context["personal_plot_cards"]
+                if card["kind"] == "scatter"
+            )
+        )

@@ -14,7 +14,6 @@ from django.utils import translation
 from .localization import (
     LANGUAGES,
     UI_COPY,
-    UI_EDITABLE,
     language_status,
     language_url,
     requested_language,
@@ -167,9 +166,6 @@ def editor(request, activity):
                 "languages": [{"code": code, "name": name} for code, name in LANGUAGES],
                 "ui": UI_COPY,
             },
-            "ui_editable": [
-                {"key": key, "label": UI_COPY["en"][key]} for key in UI_EDITABLE
-            ],
             "language_versions": language_status(
                 activity, schema_for_question(question)
             ),
@@ -325,6 +321,22 @@ def _render_results(
             if participant
             else []
         )
+    aggregate = plot_context(
+        question,
+        participant,
+        language=language,
+        preview_entries=preview_entries,
+        scope="aggregate",
+    )
+    personal = plot_context(
+        question,
+        participant,
+        language=language,
+        preview_entries=preview_entries,
+        scope="personal",
+    )
+    for card in personal["plot_cards"]:
+        card["data_id"] = "personal-" + card["data_id"]
     return render(
         request,
         "course_iframe/flexible_results.html",
@@ -332,7 +344,8 @@ def _render_results(
             **_student_context(activity, language, preview, question),
             "participant": participant,
             "question": question,
-            "show_personal": bool(participant or preview),
+            "show_personal": False,
+            "personal_plot_cards": personal["plot_cards"],
             "own_entries": [
                 {
                     "response": response,
@@ -340,12 +353,7 @@ def _render_results(
                 }
                 for response in responses
             ],
-            **plot_context(
-                question,
-                participant,
-                language=language,
-                preview_entries=preview_entries,
-            ),
+            **aggregate,
         },
     )
 
