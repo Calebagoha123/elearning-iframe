@@ -58,21 +58,6 @@ from .services import (
 )
 
 
-ACTIVITY_ENTRY_TARGETS = {
-    RELATIONSHIP_SLUG: {
-        "title": "Relationship survey",
-        "redirect": "relationship-activity",
-    },
-    HOUSING_SLUG: {
-        "title": "Housing data entry",
-        "redirect": "housing-activity",
-    },
-    "summary": {
-        "title": "Your results",
-        "redirect": "student-summary",
-    },
-}
-
 BASE_CSV_COLUMNS = [
     "participant_id",
     "activity_slug",
@@ -185,44 +170,20 @@ def healthz(request):
 
 @require_http_methods(["GET", "POST"])
 def activity_iframe_entry(request, activity_slug):
-    activity_config = ACTIVITY_ENTRY_TARGETS.get(activity_slug)
-    requested_activity = None
+    # Validate access before creating an anonymous identity for a new visitor.
     if activity_slug != "summary":
-        requested_activity = get_object_or_404(Activity, deleted_at__isnull=True, slug=activity_slug, is_active=True, activity_type__in=["housing_survey", "relationship_survey", "builder"])
-        activity_config = {"title": requested_activity.title, "redirect": "activity-student"}
-
-    from .entry_pages import entry_configuration, entry_form, render_entry
-
-    if requested_activity and entry_configuration(requested_activity)["skip"]:
-        participant = participant_from_session(request)
-        if participant is None:
-            from uuid import uuid4
-            participant = get_or_create_participant("anon-" + uuid4().hex)
-            remember_participant(request, participant)
-        return redirect("activity-student", activity_slug=activity_slug)
-
-    data_source = request.POST if request.method == "POST" else request.GET
-    initial = {
-        "pseudoname": (
-            data_source.get("pseudoname")
-            or data_source.get("participant_id")
-            or ""
-        ).strip(),
-    }
-    if request.method == "POST":
-        form = entry_form(requested_activity, request.POST)
-        if form.is_valid():
-            participant = get_or_create_participant(form.cleaned_data["pseudoname"])
-            remember_participant(request, participant)
-            if requested_activity:
-                if activity_slug in ACTIVITY_ENTRY_TARGETS:
-                    return redirect(ACTIVITY_ENTRY_TARGETS[activity_slug]["redirect"])
-                return redirect("activity-student", activity_slug=activity_slug)
-            return redirect(activity_config["redirect"])
-    else:
-        form = entry_form(requested_activity, initial=initial)
-
-    return render_entry(request, requested_activity, form, title=activity_config["title"])
+        get_object_or_404(
+            Activity, slug=activity_slug, is_active=True, deleted_at__isnull=True,
+            activity_type__in=["housing_survey", "relationship_survey", "builder"],
+        )
+    participant = participant_from_session(request)
+    if participant is None:
+        from uuid import uuid4
+        participant = get_or_create_participant("anon-" + uuid4().hex)
+        remember_participant(request, participant)
+    if activity_slug == "summary":
+        return redirect("student-summary")
+    return redirect("activity-student", activity_slug=activity_slug)
 
 
 

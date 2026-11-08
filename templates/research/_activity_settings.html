@@ -4,20 +4,11 @@
 <input type="hidden" name="activity_settings" value="1">
 {{ activity_settings.revision }}{{ activity_settings.revision.errors }}
 <fieldset class="form-stack"><legend>Activity details</legend>
-{% for field in activity_settings.detail_fields %}
+{% for field in activity_settings.visible_fields %}
   <div class="builder-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>
 {% endfor %}
 <p class="muted">Uncheck Published to keep a draft or close student access. Saved responses are retained.</p>
 </fieldset>
-<details class="activity-embed-details" data-entry-settings>
-  <summary>Activity landing page</summary>
-  <div class="form-stack">
-    <p class="muted">Choose German, Dutch or English defaults, then customise any text below. Blank optional text is hidden. Save before previewing.</p>
-    {% for field in activity_settings.landing_fields %}<div class="builder-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
-    <p class="muted">Skipping the landing page creates a random ID for a new browser session and reuses it across activities. Clearing cookies or using another browser creates a new identity.</p>
-    <a class="text-link external-link" href="{% url 'research-preview-entry' activity.slug %}" target="_blank" rel="noopener">Preview landing page<span class="external-link__arrow" aria-hidden="true">↗</span></a>
-  </div>
-</details>
 <details class="activity-embed-details">
   <summary>Moodle link and embed code</summary>
   <div class="form-stack">
@@ -28,5 +19,4 @@
     <small role="status" aria-live="polite" data-copy-status></small>
   </div>
 </details>
-{{ activity_settings.entry_presets|json_script:"entry-language-presets" }}
 <script src="{% static 'js/activity_catalog.js' %}" defer></script>

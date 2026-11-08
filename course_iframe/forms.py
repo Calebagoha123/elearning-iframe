@@ -7,21 +7,6 @@ from django.utils.text import slugify
 from .nominatim import PlaceVerificationError, verify_place
 
 
-class ParticipantEntryForm(forms.Form):
-    pseudoname = forms.CharField(
-        label="Pseudoname",
-        max_length=160,
-        help_text="Use the pseudoname shown in Moodle.",
-        error_messages={"required": "Enter your Moodle pseudoname."},
-    )
-
-    def clean_pseudoname(self):
-        pseudoname = self.cleaned_data["pseudoname"].strip()
-        if not pseudoname:
-            raise forms.ValidationError(self.fields["pseudoname"].error_messages["required"])
-        return pseudoname
-
-
 class RelationshipForm(forms.Form):
     relationship = forms.ChoiceField(label="Relationship", required=False)
     income_comparison = forms.ChoiceField(

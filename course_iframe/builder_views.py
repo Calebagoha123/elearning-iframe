@@ -307,10 +307,3 @@ def delete_activity(request, activity_slug):
     activity.revision += 1
     activity.save(update_fields=["deleted_at", "revision"])
     return redirect("research-dashboard")
-
-
-@views.researcher_required
-@require_http_methods(["GET"])
-def activity_entry_preview(request, activity_slug):
-    from .entry_pages import render_entry
-    return render_entry(request, get_activity(activity_slug), preview=True)

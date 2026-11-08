@@ -80,16 +80,12 @@ the interaction without saving answers. The editor provides a generated iframe
 link and embed code for Moodle. Students can review, change, add, and remove
 their entries before saving.
 
-In **Edit activity → Activity landing page**, choose German, Dutch or English
-starting text and customise the heading, introduction, ID label/hint, privacy
-notice and start button. Optional text can be cleared. Save before opening the
-landing-page preview; previews never create participant IDs or responses.
-
-Enable **Skip landing page** to open the activity directly. New browser sessions
-receive a random participant ID; an existing session identity is reused across
-activities. Clearing cookies or changing browser/device creates a new identity.
-Activity and question definitions and collected responses are stored in the
-PostgreSQL database, independently of these session cookies.
+Activities open directly, without a landing page or pseudonym prompt. New browser
+sessions receive a random participant ID; an existing session identity is reused
+across activities. Clearing cookies or changing browser/device creates a new
+identity. Activity/question definitions and responses remain in PostgreSQL.
+Questions and instructions are displayed exactly as entered; there is no Google
+Translate or other automatic translation service.
 
 Every activity has its own student results page, researcher response review,
 cohort plots, and CSV filter. Choice and Likert questions produce distributions;

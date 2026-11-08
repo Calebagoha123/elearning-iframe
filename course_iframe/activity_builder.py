@@ -5,12 +5,7 @@ from django.db import transaction
 from django.urls import reverse
 
 from .models import Activity, Question
-from .entry_pages import (
-    ENTRY_LANGUAGES,
-    ENTRY_COPY_FIELDS,
-    ENTRY_DEFAULTS,
-    entry_configuration,
-)
+
 from .services import HOUSING_QUESTION_SLUG, RELATIONSHIP_QUESTION_SLUG
 
 ACTIVITY_TYPES = {
@@ -90,40 +85,6 @@ class NewActivityForm(forms.ModelForm):
 class ActivitySettingsForm(forms.ModelForm):
     revision = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
 
-    landing_language = forms.ChoiceField(
-        label="Landing-page language", choices=ENTRY_LANGUAGES, required=False
-    )
-    skip_landing = forms.BooleanField(
-        label="Skip landing page and assign a random participant ID", required=False
-    )
-    entry_heading = forms.CharField(
-        label="Page heading", max_length=500, required=False
-    )
-    entry_intro = forms.CharField(
-        label="Introduction (optional)",
-        widget=forms.Textarea(attrs={"rows": 3}),
-        max_length=4000,
-        required=False,
-    )
-    entry_eyebrow = forms.CharField(
-        label="Small heading (optional)", max_length=100, required=False
-    )
-    entry_label = forms.CharField(
-        label="Participant ID label", max_length=200, required=False
-    )
-    entry_help = forms.CharField(
-        label="Participant ID hint (optional)", max_length=1000, required=False
-    )
-    entry_privacy = forms.CharField(
-        label="Research/privacy notice (optional)",
-        widget=forms.Textarea(attrs={"rows": 4}),
-        max_length=6000,
-        required=False,
-    )
-    entry_button = forms.CharField(
-        label="Start button text", max_length=100, required=False
-    )
-
     class Meta:
         model = Activity
         fields = ["title", "description", "is_active"]
@@ -136,63 +97,6 @@ class ActivitySettingsForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.initial["revision"] = self.instance.revision
-        copy = entry_configuration(self.instance)
-        self.initial["landing_language"] = copy["language"]
-        self.initial["skip_landing"] = copy["skip"]
-        for key in ENTRY_COPY_FIELDS:
-            self.initial["entry_" + key] = copy[key]
-        self.initial["entry_heading"] = self.instance.entry_settings.get("heading", "")
-        self.fields["entry_heading"].widget.attrs["placeholder"] = (
-            "Use the activity title"
-        )
-
-    def entry_presets(self):
-        return ENTRY_DEFAULTS
-
-    def detail_fields(self):
-        return [self[name] for name in ("title", "description", "is_active")]
-
-    def landing_fields(self):
-        return [
-            self[name]
-            for name in (
-                "landing_language",
-                "skip_landing",
-                *("entry_" + key for key in ENTRY_COPY_FIELDS),
-            )
-        ]
-
-    def save(self, commit=True):
-        activity = super().save(commit=False)
-        copy = entry_configuration(activity)
-        language = self.cleaned_data.get("landing_language") or copy["language"]
-        full_entry_form = self.add_prefix("landing_language") in self.data
-        settings = {
-            "language": language,
-            "skip": self.cleaned_data.get("skip_landing", False)
-            if full_entry_form
-            else copy["skip"],
-        }
-        for key in ENTRY_COPY_FIELDS:
-            name = "entry_" + key
-            # Older clients posting activity metadata retain their existing copy.
-            settings[key] = (
-                self.cleaned_data.get(name, "")
-                if self.add_prefix(name) in self.data
-                else copy[key]
-            )
-            if (
-                language != copy["language"]
-                and key in ENTRY_DEFAULTS[copy["language"]]
-                and settings[key] == ENTRY_DEFAULTS[copy["language"]][key]
-            ):
-                settings[key] = ENTRY_DEFAULTS[language][key]
-        for key in ("label", "button"):
-            settings[key] = settings[key] or ENTRY_DEFAULTS[language][key]
-        activity.entry_settings = settings
-        if commit:
-            activity.save()
-        return activity
 
 
 class ActivityChanged(Exception):

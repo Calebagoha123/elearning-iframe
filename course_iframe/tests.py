@@ -51,11 +51,12 @@ class IframeMvpTests(TestCase):
         return reverse("activity-iframe-entry", args=[activity_slug])
 
     def enter_activity_iframe(self, activity_slug=RELATIONSHIP_SLUG, pseudoname="student-1"):
-        return self.client.post(
-            reverse("activity-iframe-entry", args=[activity_slug]),
-            {"pseudoname": pseudoname},
-            follow=True,
-        )
+        from .services import SESSION_PARTICIPANT_ID
+        participant = get_or_create_participant(pseudoname)
+        session = self.client.session
+        session[SESSION_PARTICIPANT_ID] = participant.participant_id
+        session.save()
+        return self.client.get(reverse("activity-iframe-entry", args=[activity_slug]), follow=True)
 
     def participant(self, participant_id="student-1"):
         return Participant.objects.get(participant_id=participant_id)
@@ -81,13 +82,12 @@ class IframeMvpTests(TestCase):
                 },
             )
 
-    def test_activity_iframe_entry_prompts_for_moodle_pseudoname(self):
-        response = self.client.get(self.activity_iframe_url())
-
+    def test_activity_iframe_entry_opens_directly_with_random_identity(self):
+        response = self.client.get(self.activity_iframe_url(), follow=True)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Relationship survey")
-        self.assertContains(response, "Pseudoname")
-        self.assertContains(response, "Use the pseudoname shown in Moodle.")
+        self.assertNotContains(response, "Use the pseudoname shown in Moodle.")
+        self.assertRegex(Participant.objects.get().participant_id, r"^anon-[0-9a-f]{32}$")
 
     def test_activity_iframe_entry_starts_requested_activity_without_landing(self):
         response = self.enter_activity_iframe()
@@ -113,15 +113,10 @@ class IframeMvpTests(TestCase):
             ).exists()
         )
 
-    def test_activity_iframe_entry_requires_pseudoname(self):
-        response = self.client.post(
-            reverse("activity-iframe-entry", args=[RELATIONSHIP_SLUG]),
-            {"pseudoname": "   "},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Enter your Moodle pseudoname.")
-        self.assertEqual(Participant.objects.count(), 0)
+    def test_activity_iframe_entry_ignores_posted_identity(self):
+        response = self.client.post(self.activity_iframe_url(), {"pseudoname": "forged-identity"})
+        self.assertEqual(response.status_code, 302)
+        self.assertRegex(Participant.objects.get().participant_id, r"^anon-[0-9a-f]{32}$")
 
     def test_bare_iframe_entry_is_not_available(self):
         response = self.client.get(
