@@ -97,6 +97,10 @@
     addSelect.replaceChildren(...config.languages.filter(item => !variants().includes(item.code)).map(item => new Option(item.name, item.code)));
     if (Array.from(addSelect.options).some(option => option.value === selected)) addSelect.value = selected;
     openLanguage.disabled = addSelect.options.length === 0;
+    const removeLanguage = form.querySelector('[data-delete-language]');
+    removeLanguage.hidden = language === source;
+    removeLanguage.setAttribute('aria-label', `Delete ${names[language]}`);
+    removeLanguage.title = `Delete ${names[language]}`;
     updateStatus();
   };
   const updateStatus = () => {
@@ -247,6 +251,21 @@
     if (opening) addSelect.focus();
   });
   form.querySelector('[data-cancel-language]').addEventListener('click', closePicker);
+  form.querySelector('[data-delete-language]').addEventListener('click', () => {
+    if (language === source) return;
+    const removed = language;
+    delete translations[removed];
+    sections().forEach(section => {
+      if (section._spec.translations) delete section._spec.translations[removed];
+      questions(section).forEach(row => {
+        if (row._spec.translations) delete row._spec.translations[removed];
+        row._spec.choices.forEach(choice => { if (choice.translations) delete choice.translations[removed]; });
+      });
+    });
+    language = source; dirty = true; clearTimeout(statusTimer);
+    languagePicker.hidden = true; openLanguage.setAttribute('aria-expanded', 'false');
+    showLanguage(); languageTabs.querySelector(`[data-language-tab="${source}"]`).focus();
+  });
   languagePicker.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closePicker(); } });
   form.querySelector('[data-add-language]').addEventListener('click', () => {
     const selected = addSelect.value;

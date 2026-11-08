@@ -22,9 +22,7 @@
     <ul class="chart-legend">{% for item in card.data.legend %}<li><span class="chart-legend__swatch" style="background: {{ item.color }}"></span>{{ item.label }}</li>{% empty %}<li>{{ ui.empty_answers }}</li>{% endfor %}</ul>
   {% elif card.kind == 'distribution' %}
     <div class="flexible-distribution">{% for row in card.data.rows %}<div class="distribution-row"><span>{{ row.label }}</span><div class="distribution-track"><span style="width: {{ row.percent }}%"></span></div><strong>{{ row.count }}</strong>{% if show_personal and not card.synthetic %}<small>{{ row.yours }} {% if is_research_view %}selected{% else %}{{ ui.yours }}{% endif %}</small>{% endif %}</div>{% endfor %}</div>
-    <p class="muted">{{ card.data.total }} {{ ui.answers }}</p>
   {% elif card.kind == 'numeric' %}
-    {% if card.data.count %}<p class="muted">{{ card.data.count }} {{ ui.answers }} · {{ ui.mean }} {{ card.data.mean }} · {{ ui.range }} {{ card.data.minimum }}–{{ card.data.maximum }}</p>{% endif %}
     <div class="flexible-distribution">{% for row in card.data.rows %}<div class="distribution-row"><span>{{ row.label }}</span><div class="distribution-track"><span style="width: {{ row.percent }}%"></span></div><strong>{{ row.count }}</strong></div>{% empty %}<p class="muted">{{ ui.no_numeric }}</p>{% endfor %}</div>
   {% elif card.kind == 'word_cloud' %}
     <div class="word-cloud">{% for word in card.data.words %}<span style="font-size: {{ word.size }}rem">{{ word.label }} <small>{{ word.count }}</small></span>{% empty %}<p class="muted">{{ ui.no_text }}</p>{% endfor %}</div>

@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}{{ activity.title }}{% endblock %}
 {% block content %}
-<header class="topbar"><h1>{{ activity.title }}</h1><a class="activity-icon" href="{{ activity_results_url }}" aria-label="{{ ui.results }}" title="{{ ui.results }}">{% include "course_iframe/_icon.html" with icon="chart" %}</a></header>
+<header class="topbar"><h1>{{ activity.title }}</h1></header>
 {% if preview %}<a class="text-link preview-return" href="{{ activity_edit_url }}">← Back to activity</a><p class="message">Student preview · Test answers are not saved.{% if translation_incomplete %} This translation is incomplete; missing text uses the original language.{% endif %}</p>{% endif %}
 {% if activity.description %}<div class="activity-instructions">{{ activity.description|linebreaks }}</div>{% endif %}
 <form method="post" class="form-stack" data-flexible-response{% if preview %} data-preview{% endif %}>
@@ -17,13 +17,13 @@
     {% if group.section.repeatable %}
     <div class="entry-actions" data-empty-actions>
       <button class="button button-secondary" type="button" data-add-entry data-empty-add>+ {{ group.section.add_label }}</button>
-      <button class="activity-icon student-primary-action" type="submit" aria-label="{{ ui.save }}" title="{{ ui.save }}">{% include "course_iframe/_icon.html" with icon="check" %}</button>
     </div>
     <template data-entry-template>{% include "course_iframe/_flexible_entry.html" with entry=group.formset.empty_form %}</template>
     {% endif %}
   </section>
   {% empty %}<p class="panel muted">{{ ui.empty_questions }}</p>{% endfor %}
 
+  {% if groups %}<div class="student-save-footer"><button class="activity-icon student-primary-action" type="submit" aria-label="{{ ui.save }}" title="{{ ui.save }}">{% include "course_iframe/_icon.html" with icon="check" %}</button></div>{% endif %}
 </form>
 {{ ui|json_script:"student-ui-copy" }}
 <script src="{% static 'js/flexible_response.js' %}" defer></script>

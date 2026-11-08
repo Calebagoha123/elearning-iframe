@@ -1,4 +1,6 @@
 from django.db import models
+
+from .localization import LANGUAGES
 from django.utils import timezone
 
 
@@ -45,12 +47,7 @@ class Activity(models.Model):
     source_language = models.CharField(
         max_length=8,
         default="en",
-        choices=[
-            ("en", "English"),
-            ("nl", "Nederlands"),
-            ("de", "Deutsch"),
-            ("fr", "Français"),
-        ],
+        choices=LANGUAGES,
     )
     translations = models.JSONField(default=dict, blank=True)
     # Retained for compatibility with existing databases; landing pages are no longer used.

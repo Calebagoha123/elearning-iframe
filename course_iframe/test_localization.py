@@ -10,9 +10,15 @@ from .test_activity_builder import example_schema
 
 
 def variant(schema, code):
-    prefix = {"de": "Deutsch", "nl": "Nederlands", "fr": "Français", "en": "English"}[
-        code
-    ]
+    prefix = {
+        "de": "Deutsch",
+        "nl": "Nederlands",
+        "fr": "Français",
+        "en": "English",
+        "es": "Español",
+        "pt": "Português",
+        "it": "Italiano",
+    }[code]
     for section in schema["sections"]:
         section.setdefault("translations", {})[code] = {
             key: prefix + " " + section[key] if section[key] else ""
@@ -528,4 +534,78 @@ class LanguageVersionsTests(TestCase):
                 for card in empty.context["personal_plot_cards"]
                 if card["kind"] == "scatter"
             )
+        )
+
+    def test_spanish_portuguese_and_italian_share_stable_answers_and_localized_ui(self):
+        from .localization import UI_COPY, LANGUAGES
+
+        self.assertEqual(set(UI_COPY), {code for code, _ in LANGUAGES})
+        for copy in UI_COPY.values():
+            self.assertEqual(set(copy), set(UI_COPY["en"]))
+        activity = self.create()
+        schema = example_schema()
+        translations = {}
+        for code in ["es", "pt", "it"]:
+            variant(schema, code)
+            translations[code] = {
+                "title": code + " title",
+                "description": code + " instructions",
+            }
+        self.save(activity, schema, translations)
+        for code, save_label in [("es", "Guardar"), ("pt", "Guardar"), ("it", "Salva")]:
+            visitor = self.visitor(activity, code)
+            url = reverse("activity-student", args=[activity.slug])
+            page = visitor.get(url, {"lang": code})
+            self.assertContains(page, f'aria-label="{save_label}"')
+            self.assertContains(page, 'type="submit"', count=1)
+            self.assertNotContains(
+                page, f'href="{reverse("activity-results", args=[activity.slug])}'
+            )
+            response = visitor.post(url, self.answers(activity, code))
+            self.assertEqual(response.status_code, 302)
+            result = visitor.get(response.url)
+            self.assertEqual(result.status_code, 200)
+            self.assertNotContains(result, " · " + UI_COPY[code]["mean"] + " ")
+        self.assertEqual(
+            set(Response.objects.values_list("language", flat=True)), {"es", "pt", "it"}
+        )
+
+    def test_deleting_language_closes_its_link_but_preserves_answers_and_versions(self):
+        activity, question = self.ready()
+        visitor = self.visitor(activity, "de")
+        visitor.post(
+            reverse("activity-student", args=[activity.slug]),
+            self.answers(activity, "de"),
+        )
+        snapshots = list(Response.objects.values_list("pk", "language", "display_json"))
+        schema = schema_for_question(question)
+        for section in schema["sections"]:
+            section["translations"].pop("de")
+            for field in section["fields"]:
+                field["translations"].pop("de")
+                for choice in field["choices"]:
+                    choice["translations"].pop("de")
+        translations = dict(activity.translations)
+        translations.pop("de")
+        updated = self.save(activity, schema, translations)
+        self.assertEqual(updated.pk, question.pk)
+        self.assertEqual(updated.version, question.version)
+        self.assertEqual(
+            list(Response.objects.values_list("pk", "language", "display_json")),
+            snapshots,
+        )
+        self.assertEqual(
+            visitor.get(
+                reverse("activity-student", args=[activity.slug]), {"lang": "de"}
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            visitor.get(
+                reverse("activity-student", args=[activity.slug]), {"lang": "fr"}
+            ).status_code,
+            200,
+        )
+        self.assertNotIn(
+            "de", schema_for_question(updated)["sections"][0]["translations"]
         )

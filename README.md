@@ -87,7 +87,8 @@ identity. Activity/question definitions and responses remain in PostgreSQL.
 Questions and instructions are displayed exactly as entered; there is no Google
 Translate or other automatic translation service. New activities start in English
 unless another original language is chosen during creation. The editor has a tab
-for each language. Click **+**, choose a language, then **Add language** to create
+for each language (English, Dutch, German, French, Spanish, Portuguese, or Italian).
+Click **+**, choose a language, then **Add language** to create
 an empty text version of the existing question structure. Enter the title,
 instructions, question text, hints, and individual choice/scale labels in that tab.
 Question types, answer codes, order, and required settings remain shared.
@@ -100,8 +101,11 @@ responses record the language and displayed wording for historical review and CS
 export. Interface labels, icon tooltips, and validation messages use bundled translations.
 Student actions use compact icons; the results tabs switch between charts for
 only the current student (**You**) and all responses (**Everyone**). The pencil
-next to **You** returns to their entry form; save and delete actions sit together
-below each entry. Save submits the activity form.
+next to **You** returns to their entry form. Each entry has a delete icon; one
+save action at the end submits all answers and opens the results. Added languages
+can be removed with the trash icon beside the language tabs, then **Save activity**.
+The original language remains. Removing a language keeps historical responses and
+their wording snapshots; its public language link closes.
 
 Public activity links and staff student preview use the same forms and charts.
 Preview adds a staff navigation banner and never saves trial answers.

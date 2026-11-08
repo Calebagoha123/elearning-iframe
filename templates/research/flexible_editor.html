@@ -10,12 +10,13 @@
   <section class="activity-languages" aria-label="Language versions">
     <div class="language-tab-row">
       <div class="language-tabs" role="tablist" aria-label="Activity language" data-language-tabs></div>
+      <button class="activity-icon activity-icon--delete" type="button" data-delete-language aria-label="Delete language" title="Delete language" hidden>{% include "course_iframe/_icon.html" with icon="trash" %}</button>
       <button class="activity-icon language-add" type="button" data-open-language aria-label="Add language" title="Add language" aria-expanded="false" aria-controls="add-language-panel">+</button>
     </div>
     <div id="add-language-panel" class="language-add-panel" data-language-picker hidden>
       <label for="new-language">Language<select id="new-language" data-new-language></select></label>
       <button class="button button-small" type="button" data-add-language>Add language</button>
-      <button class="text-link" type="button" data-cancel-language>Cancel</button>
+      <button class="button button-cancel button-small" type="button" data-cancel-language>Cancel</button>
     </div>
     <p class="muted language-status" data-language-status role="status"></p>
   </section>
