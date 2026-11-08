@@ -12,6 +12,7 @@ class ParticipantAdmin(admin.ModelAdmin):
 
 @admin.register(Activity)
 class ActivityAdmin(admin.ModelAdmin):
+    exclude = ["entry_settings"]
     list_display = ["slug", "title", "activity_type", "is_active"]
     list_filter = ["is_active"]
 
